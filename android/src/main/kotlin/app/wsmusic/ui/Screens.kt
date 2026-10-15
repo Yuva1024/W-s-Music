@@ -273,6 +273,16 @@ fun LibraryScreen(c: Controller) {
         item {
             Text("Pick artists you like", Modifier.fillMaxWidth().clickable { c.openPicker() }.padding(16.dp), color = c.accent.highlight)
         }
+        item {
+            // App version and a manual update check (the app also checks by itself shortly after it starts).
+            val version = echopc.AppHooks.updates?.currentVersion().orEmpty()
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("W's MUSIC $version", Modifier.weight(1f), color = Ws.muted, style = MaterialTheme.typography.bodySmall)
+                OutlinedButton({ if (c.update != null) c.updateDialogOpen = true else c.checkForUpdates(manual = true) }) {
+                    Text(if (c.update != null) "Update to ${c.update?.version}" else "Check for updates", color = Ws.text)
+                }
+            }
+        }
     }
 }
 
