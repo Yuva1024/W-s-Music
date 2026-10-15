@@ -26,7 +26,7 @@ class ShelfBandit(private val random: Random = Random.Default) {
         }.sortedByDescending { it.second }.map { it.first }
     }
 
-    internal fun sampleBeta(a: Double, b: Double): Double {
+    fun sampleBeta(a: Double, b: Double): Double {
         val x = sampleGamma(a); val y = sampleGamma(b)
         return x / (x + y)
     }

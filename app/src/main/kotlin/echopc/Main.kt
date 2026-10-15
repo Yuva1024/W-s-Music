@@ -43,6 +43,7 @@ fun settingsFile(): File {
 
 fun main() {
     Device.configure() // render API + audio engine must be chosen before any UI class loads
+    installDesktopHooks()
     runApp()
 }
 

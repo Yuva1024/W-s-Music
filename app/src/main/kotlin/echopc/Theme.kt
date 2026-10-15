@@ -35,17 +35,7 @@ object Ws {
     val defaultAccent2 = Color(0xFF6D3FE0)
 }
 
-@Immutable
-class Accent(val primary: Color, val secondary: Color) {
-    /** Lighter tint of the primary for text and icons on dark surfaces. */
-    val highlight: Color get() = androidx.compose.ui.graphics.lerp(primary, Color.White, 0.28f)
 
-    /** Text/icon colour on top of [primary]: album art can be anything from pale yellow to navy. */
-    val onPrimary: Color get() = if (primary.luminance() > 0.45f) Color.Black else Color.White
-
-    /** Darkened primary used to flood large areas (headers, Now Playing, lyrics) without glare. */
-    val flood: Color get() = androidx.compose.ui.graphics.lerp(primary, Color.Black, 0.45f)
-}
 
 val LocalAccent = compositionLocalOf { Accent(Ws.defaultAccent, Ws.defaultAccent2) }
 

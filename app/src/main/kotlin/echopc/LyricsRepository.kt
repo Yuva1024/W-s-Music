@@ -15,17 +15,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 
-sealed interface LyricsUiState {
-    data object Idle : LyricsUiState
-    data object Loading : LyricsUiState
-    data object NotFound : LyricsUiState
-    data class Loaded(
-        val provider: String,
-        val lines: List<LyricsEntry>,
-        /** True when lines carry timestamps; false for plain text lyrics. */
-        val synced: Boolean,
-    ) : LyricsUiState
-}
+
 
 private const val LYRICS_NOT_FOUND = "LYRICS_NOT_FOUND"
 

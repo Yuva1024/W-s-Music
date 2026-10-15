@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
  * query crashes the JVM natively.
  */
 internal class TestScope : CoroutineScope by CoroutineScope(SupervisorJob() + Dispatchers.Default) {
+    init { installDesktopHooks() } // same lyrics/colour behaviour as the app
     fun stop() {
         val job = this.coroutineContext[Job] as Job // read here: inside runBlocking `coroutineContext` is runBlocking's own
         runBlocking { job.cancelAndJoin() }

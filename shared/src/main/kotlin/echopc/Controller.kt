@@ -163,14 +163,34 @@ sealed interface ImportUi {
 
 /** Accent pair derived from album art: the dominant colour plus a hue-shifted partner for gradients. */
 fun accentFrom(dominant: Color): Accent {
-    val hsb = FloatArray(3)
-    java.awt.Color.RGBtoHSB((dominant.red * 255).toInt(), (dominant.green * 255).toInt(), (dominant.blue * 255).toInt(), hsb)
+    val hsb = rgbToHsb(dominant.red, dominant.green, dominant.blue)
     // Warm art (red/orange/yellow) pairs with a pink-red; cooler art pairs with the next hue along.
     val warm = hsb[0] < 0.17f || hsb[0] > 0.93f
     val shift = if (warm) -0.07f else 0.10f
     val partnerHue = ((hsb[0] + shift) % 1f + 1f) % 1f
-    val partner = Color(java.awt.Color.HSBtoRGB(partnerHue, (hsb[1] * 0.9f).coerceIn(0.5f, 0.95f), 1f) or (0xFF shl 24))
+    val partner = hsbToColor(partnerHue, (hsb[1] * 0.9f).coerceIn(0.5f, 0.95f), 1f)
     return Accent(dominant, partner)
+}
+
+/** Hue, saturation, brightness (0..1) of an RGB colour (0..1), as java.awt.Color.RGBtoHSB computes them. */
+internal fun rgbToHsb(r: Float, g: Float, b: Float): FloatArray {
+    val max = maxOf(r, g, b); val min = minOf(r, g, b); val d = max - min
+    val s = if (max == 0f) 0f else d / max
+    val h = when {
+        d == 0f -> 0f
+        max == r -> ((g - b) / d).let { if (it < 0) it + 6f else it } / 6f
+        max == g -> ((b - r) / d + 2f) / 6f
+        else -> ((r - g) / d + 4f) / 6f
+    }
+    return floatArrayOf(h, s, max)
+}
+
+internal fun hsbToColor(h: Float, s: Float, v: Float): Color {
+    val i = (h * 6f).toInt() % 6
+    val f = h * 6f - (h * 6f).toInt()
+    val p = v * (1 - s); val q = v * (1 - f * s); val t = v * (1 - (1 - f) * s)
+    val (r, g, b) = when (i) { 0 -> Triple(v, t, p); 1 -> Triple(q, v, p); 2 -> Triple(p, v, t); 3 -> Triple(p, q, v); 4 -> Triple(t, p, v); else -> Triple(v, p, q) }
+    return Color(r, g, b)
 }
 
 /**
@@ -235,7 +255,7 @@ class Controller(
     private var searchedQuery = ""
     /** What the last finished search was for; the typing view shows while the box differs from it. */
     var lastSearched by mutableStateOf("")
-        internal set
+        set // public so tests can stand in for a finished search
     var suggestions by mutableStateOf<SearchSuggestions?>(null)
     var suggestionsFor by mutableStateOf("")
     var suggestionsLoading by mutableStateOf(false)
@@ -251,7 +271,7 @@ class Controller(
 
     // ---- extras ----
     var lyrics by mutableStateOf<LyricsUiState>(LyricsUiState.Idle)
-    var accent by mutableStateOf(Accent(Ws.defaultAccent, Ws.defaultAccent2))
+    var accent by mutableStateOf(Accent.DEFAULT)
     var toast by mutableStateOf<String?>(null)
     var toastAction by mutableStateOf<ToastAction?>(null)
     var importUi by mutableStateOf<ImportUi>(ImportUi.Idle)
@@ -404,10 +424,10 @@ class Controller(
     private fun loadSideEffects(song: SongItem) {
         lyricsJob?.cancel(); sideJob?.cancel()
         lyrics = LyricsUiState.Loading
-        lyricsJob = scope.launch { lyrics = LyricsRepository.load(song) }
+        lyricsJob = scope.launch { lyrics = AppHooks.loadLyrics(song) }
         sideJob = scope.launch {
-            val dominant = song.thumbnail.takeIf { it.isNotBlank() }?.let { ThumbCache.load(it, 128)?.dominant }
-            accent = if (dominant != null) accentFrom(dominant) else Accent(Ws.defaultAccent, Ws.defaultAccent2)
+            val dominant = song.thumbnail.takeIf { it.isNotBlank() }?.let { AppHooks.dominantColor(it) }
+            accent = if (dominant != null) accentFrom(dominant) else Accent.DEFAULT
         }
     }
 
@@ -527,7 +547,7 @@ class Controller(
     fun shuffleQueue() { queue = queue.shuffledUpcoming(); queue.upNext?.let { engine.prefetch(it.id) } }
     fun clearQueue() {
         flushPlay(EndReason.CLOSED); engine.stop(); queue = QueueState(); lyrics = LyricsUiState.Idle
-        accent = Accent(Ws.defaultAccent, Ws.defaultAccent2)
+        accent = Accent.DEFAULT
     }
     // ---------------- shuffle & Smart Shuffle ----------------
 
@@ -1001,7 +1021,7 @@ class Controller(
             delay(200) // wait for a pause in typing
             YouTube.searchSuggestions(q)
                 .onSuccess { suggestions = it; suggestionsFor = q }
-                .onFailure { if (it !is kotlinx.coroutines.CancellationException) Device.log("Suggestions for '$q' failed: ${it.message?.take(120)}") }
+                .onFailure { if (it !is kotlinx.coroutines.CancellationException) AppHooks.log("Suggestions for '$q' failed: ${it.message?.take(120)}") }
             suggestionsLoading = false
         }
     }
@@ -1031,7 +1051,7 @@ class Controller(
                     .onFailure { failure = it }
             }
             if (gen != searchGeneration) return@launch
-            failure?.let { Device.log("Search for '$q' failed: ${it.message?.take(200)}"); searchError = friendlyError(it) }
+            failure?.let { AppHooks.log("Search for '$q' failed: ${it.message?.take(200)}"); searchError = friendlyError(it) }
             searching = false; searchDone = true
         }
     }
@@ -1141,9 +1161,9 @@ class Controller(
     /** Looks for a newer release (on start; [manual] from the top bar button also says when there is none). */
     fun checkForUpdates(manual: Boolean = false) {
         scope.launch(Dispatchers.IO) {
-            val found = runCatching { Updater.check() }.onFailure { Device.log("Update check failed: ${it.message?.take(120)}") }.getOrNull()
+            val found = runCatching { AppHooks.updates?.check() }.onFailure { AppHooks.log("Update check failed: ${it.message?.take(120)}") }.getOrNull()
             if (found != null) { update = found; updateDialogOpen = true }
-            else if (manual) showToast("You're up to date (version ${Updater.currentVersion()})")
+            else if (manual) showToast("You're up to date (version ${(AppHooks.updates?.currentVersion() ?: "")})")
         }
     }
 
@@ -1154,14 +1174,15 @@ class Controller(
         updateError = null; updateProgress = 0f
         scope.launch(Dispatchers.IO) {
             runCatching {
-                val file = Updater.download(info) { updateProgress = it }
-                Device.log("Update ${info.version} downloaded from ${info.repo}; starting the installer.")
-                Updater.launchInstaller(file)
+                val updates = AppHooks.updates ?: error("Updates are not available here")
+                val file = updates.download(info) { updateProgress = it }
+                AppHooks.log("Update ${info.version} downloaded from ${info.repo}; starting the installer.")
+                updates.launchInstaller(file)
             }.onSuccess {
                 updateProgress = null
                 requestExit?.invoke()
             }.onFailure {
-                Device.log("Update ${info.version} failed: ${it.message?.take(160)}")
+                AppHooks.log("Update ${info.version} failed: ${it.message?.take(160)}")
                 updateProgress = null
                 updateError = it.message?.take(140) ?: "The update could not be downloaded"
             }
@@ -1173,7 +1194,7 @@ class Controller(
         scope.launch(Dispatchers.IO) {
             runCatching { if (YouTube.visitorData == null) YouTube.visitorData().onSuccess { YouTube.visitorData = it } }
             loadHome() // the feed no longer waits for the stream resolver warm-up
-            delay(Device.backgroundDelayMs) // keep the first seconds light; this only shortens the first song's start
+            delay(AppHooks.backgroundDelayMs) // keep the first seconds light; this only shortens the first song's start
             InnerTubeXStream.prewarm()
             refreshMixes()
         }

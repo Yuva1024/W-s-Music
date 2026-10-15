@@ -17,30 +17,18 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
-/** A newer release found on GitHub. */
-data class UpdateInfo(
-    val version: String,
-    val tag: String,
-    val repo: String,
-    val assetName: String,
-    val downloadUrl: String,
-    val sizeBytes: Long,
-    /** Hex SHA-256 published by GitHub for the file, when available; the download is refused if it does not match. */
-    val sha256: String?,
-    val notes: String,
-)
 
 /**
  * Self-update: looks for a newer release in the repositories below (the newest wins, so updates can be
  * published from either one), downloads its installer, checks it and starts it. The app then closes so the
  * installer can replace it; the library and settings live in %APPDATA% and are kept.
  */
-object Updater {
+object Updater : UpdateService {
     /** Where releases are published. The first one wins when both have the same version. */
     val repos = listOf("Yuva1024/W-s-Music", "Shriharish111/W-s-Music")
 
     /** The version this build was made as (written into version.properties by the Gradle build). */
-    fun currentVersion(): String = runCatching {
+    override fun currentVersion(): String = runCatching {
         Updater::class.java.getResourceAsStream("/version.properties")?.use { Properties().apply { load(it) }.getProperty("version") }
     }.getOrNull()?.takeIf { it.isNotBlank() && !it.contains('$') } ?: "0.0.0"
 
@@ -98,7 +86,9 @@ object Updater {
     }
 
     /** Asks GitHub for the latest release of each repository; null if there is nothing newer (or no network). */
-    fun check(current: String = currentVersion()): UpdateInfo? {
+    override fun check(): UpdateInfo? = check(currentVersion())
+
+    fun check(current: String): UpdateInfo? {
         val responses = HashMap<String, String>()
         for (repo in repos) {
             runCatching {
@@ -121,7 +111,7 @@ object Updater {
     }
 
     /** Downloads the installer to a temp folder and verifies its size and checksum; [onProgress] gets 0..1. */
-    fun download(info: UpdateInfo, onProgress: (Float) -> Unit): Path {
+    override fun download(info: UpdateInfo, onProgress: (Float) -> Unit): Path {
         val dir = Files.createTempDirectory("WsMusic-update-")
         val file = dir.resolve(info.assetName.replace(Regex("[^A-Za-z0-9._-]"), "_"))
         try {
@@ -150,7 +140,7 @@ object Updater {
     }
 
     /** Starts the downloaded installer (it opens its own window). */
-    fun launchInstaller(file: Path) {
+    override fun launchInstaller(file: Path) {
         ProcessBuilder(file.toString()).start()
     }
 }

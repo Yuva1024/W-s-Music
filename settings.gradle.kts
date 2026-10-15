@@ -16,7 +16,7 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "echo-pc-poc"
-include(":innertube", ":metadata", ":lrclib", ":kugou", ":betterlyrics", ":simpmusic", ":youlyplus", ":librarydb", ":stream", ":app")
+include(":innertube", ":metadata", ":lrclib", ":kugou", ":betterlyrics", ":simpmusic", ":youlyplus", ":librarydb", ":stream", ":shared", ":app")
 // The phone app is built only where an Android SDK is set up, so desktop-only machines are not affected.
 val hasAndroidSdk = System.getenv("ANDROID_HOME") != null || System.getenv("ANDROID_SDK_ROOT") != null ||
     file("local.properties").let { it.exists() && it.readText().contains("sdk.dir") }
