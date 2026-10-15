@@ -211,7 +211,7 @@ private fun TopBar(c: Controller, onPickAndroidFile: () -> Unit) {
     }
 }
 
-/** The W's MUSIC logo mark, white on black (from branding/). */
+/** The W's MUSIC logo (a W on a vinyl record), white on black (from branding/). */
 @Composable
 private fun BrandMark() {
     val logo = remember {
