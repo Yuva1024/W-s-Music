@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     kotlin("android")
@@ -12,8 +14,28 @@ android {
         applicationId = "app.wsmusic"
         minSdk = 23 // Android 6.0
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.1"
+        versionCode = 10003 // major*10000 + minor*100 + patch
+        versionName = "1.0.3"
+    }
+
+    // Release builds are signed with the permanent key described in keystore.properties (kept out of git).
+    // Every version must use the same key, or Android refuses to install it over the previous one.
+    val keystore = rootProject.file("keystore.properties").takeIf { it.exists() }?.let { f ->
+        Properties().apply { f.inputStream().use { load(it) } }
+    }
+    signingConfigs {
+        if (keystore != null) create("release") {
+            storeFile = file(keystore.getProperty("storeFile"))
+            storePassword = keystore.getProperty("storePassword")
+            keyAlias = keystore.getProperty("keyAlias")
+            keyPassword = keystore.getProperty("keyPassword")
+        }
+    }
+    buildTypes {
+        getByName("release") {
+            isMinifyEnabled = false // the shared code uses reflection (Room, serialization, NewPipe); keep everything
+            if (keystore != null) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {
@@ -38,6 +60,10 @@ kotlin {
 dependencies {
     implementation(project(":innertube"))
     implementation(project(":stream"))
+    implementation(project(":shared"))
+    implementation("io.coil-kt.coil3:coil-compose:3.3.0")
+    implementation("io.coil-kt.coil3:coil-network-okhttp:3.3.0")
+    implementation("androidx.compose.material:material-icons-core")
 
     val media3 = "1.8.0"
     implementation("androidx.media3:media3-exoplayer:$media3")
@@ -51,4 +77,12 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5") // java.time and java.nio.file on older Android
+}
+
+// The shared code is compiled against JetBrains Compose (the desktop toolkit). On Android its classes come from
+// AndroidX Compose instead (same packages), at the versions of the Compose BOM above; JetBrains' Android artifacts
+// for 1.12 would need Android Gradle plugin 9.1.
+configurations.configureEach {
+    listOf("org.jetbrains.compose.runtime", "org.jetbrains.compose.ui", "org.jetbrains.compose.foundation",
+        "org.jetbrains.compose.annotation-internal", "org.jetbrains.compose.collection-internal").forEach { exclude(group = it) }
 }

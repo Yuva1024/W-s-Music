@@ -13,3 +13,4 @@ app/build/shots/
 # OS junk
 Thumbs.db
 .DS_Store
+keystore.properties

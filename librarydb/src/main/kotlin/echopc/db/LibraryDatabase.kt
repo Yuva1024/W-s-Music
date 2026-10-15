@@ -90,7 +90,14 @@ abstract class LibraryDatabase : RoomDatabase() {
         }
 
         fun open(file: File = defaultFile()): LibraryDatabase =
-            Room.databaseBuilder<LibraryDatabase>(name = file.absolutePath)
+            configure(Room.databaseBuilder<LibraryDatabase>(name = file.absolutePath))
+
+        /**
+         * Finishes a builder made by the platform: the desktop passes a file path builder (above), the phone app
+         * passes Room.databaseBuilder(context, LibraryDatabase::class.java, path). Same driver and migrations on both.
+         */
+        fun configure(builder: RoomDatabase.Builder<LibraryDatabase>): LibraryDatabase =
+            builder
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
