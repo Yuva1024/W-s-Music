@@ -9,6 +9,7 @@ kotlin { jvmToolchain(21) }
 
 dependencies {
     implementation(project(":innertube"))
+    implementation(project(":stream"))
     implementation(project(":librarydb"))
     implementation(project(":lrclib"))
     implementation(project(":kugou"))

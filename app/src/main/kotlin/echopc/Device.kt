@@ -72,6 +72,7 @@ object Device {
             else -> props.getProperty("audio")?.let { it == "compat" } ?: lite
         }
         runCatching { launchFlag.writeText(System.currentTimeMillis().toString()) }
+        StreamLog.sink = ::log
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             log("Uncaught exception in ${t.name}: ${e.stackTraceToString().take(1500)}")
             System.err.println("Uncaught exception in ${t.name}")
