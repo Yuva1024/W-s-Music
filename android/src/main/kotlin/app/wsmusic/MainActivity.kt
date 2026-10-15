@@ -106,6 +106,8 @@ private fun SearchAndPlay(controller: MediaController?) {
     var playing by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var stateText by remember { mutableStateOf("") }
+    var showDetails by remember { mutableStateOf(false) }
     DisposableEffect(controller) {
         val c = controller
         fun sync() {
@@ -113,6 +115,7 @@ private fun SearchAndPlay(controller: MediaController?) {
             nowArtist = c?.mediaMetadata?.artist?.toString().orEmpty()
             playing = c?.isPlaying == true
             loading = c?.playbackState == Player.STATE_BUFFERING
+            stateText = if (c == null) "not connected" else PlaybackService.stateName(c.playbackState) + (if (c.playWhenReady) ", play requested" else "") + (if (c.isPlaying) ", playing" else "")
         }
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) = sync()
@@ -161,7 +164,7 @@ private fun SearchAndPlay(controller: MediaController?) {
             }
         }
         // Mini player
-        if (nowTitle != null) {
+        if (nowTitle != null || Diagnostics.lines.isNotEmpty()) {
             Column(Modifier.fillMaxWidth().background(Color(0xFF282828)).padding(horizontal = 16.dp, vertical = 8.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -173,6 +176,11 @@ private fun SearchAndPlay(controller: MediaController?) {
                     TextButton({ controller?.seekToNextMediaItem() }) { Text("Next") }
                 }
                 error?.let { Text(it, color = Color(0xFFFF6B6B), maxLines = 2) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Player: $stateText", color = Color.Gray, modifier = Modifier.weight(1f), maxLines = 1)
+                    TextButton({ showDetails = !showDetails }) { Text(if (showDetails) "Hide" else "Details") }
+                }
+                if (showDetails) Column { Diagnostics.lines.takeLast(12).forEach { Text(it, color = Color.Gray, maxLines = 2, style = MaterialTheme.typography.bodySmall) } }
             }
         }
     }

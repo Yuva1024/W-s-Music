@@ -35,15 +35,18 @@ class PlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        StreamLog.sink = { Log.w("WsMusic", it) }
+        StreamLog.sink = { Log.w("WsMusic", it); Diagnostics.add(it) }
         val dataSource = ResolvingDataSource.Factory(DefaultDataSource.Factory(this)) { spec ->
             if (spec.uri.scheme != SCHEME) return@Factory spec
-            val id = spec.uri.host ?: throw IOException("No song id in ${spec.uri}")
+            val id = spec.uri.getQueryParameter("id") ?: throw IOException("No song id in ${spec.uri}")
+            Diagnostics.add("Loading $id")
             val file = try {
                 runBlocking { loader.load(id).await() }
             } catch (e: Exception) {
+                Diagnostics.add("Load failed for $id: ${e.message}")
                 throw IOException(e.message ?: "Could not load the song", e)
             }
+            Diagnostics.add("Loaded $id: ${file.toFile().length() / 1024} KB")
             spec.withUri(Uri.fromFile(file.toFile()))
         }
         val player = ExoPlayer.Builder(this)
@@ -52,6 +55,10 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
             .build()
         player.addListener(object : Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Diagnostics.add("Player error ${error.errorCodeName}: ${error.cause?.message ?: error.message}")
+            }
+            override fun onPlaybackStateChanged(state: Int) { Diagnostics.add("Player state ${stateName(state)}") }
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 // Keep only the current and next downloads; older temp files are deleted.
                 val keep = listOfNotNull(mediaItem?.mediaId, player.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }?.let { player.getMediaItemAt(it).mediaId })
@@ -84,6 +91,8 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         const val SCHEME = "wsmusic"
-        fun songUri(videoId: String): Uri = Uri.parse("$SCHEME://$videoId")
+        fun stateName(state: Int) = when (state) { Player.STATE_IDLE -> "idle"; Player.STATE_BUFFERING -> "buffering"; Player.STATE_READY -> "ready"; Player.STATE_ENDED -> "ended"; else -> "?" }
+        // The id goes in a query parameter: YouTube ids contain "_" and "-", which are not safe in the host part.
+        fun songUri(videoId: String): Uri = Uri.parse("$SCHEME://song?id=" + Uri.encode(videoId))
     }
 }
