@@ -38,6 +38,23 @@ fun applyDarkTitleBar(window: java.awt.Window) {
 
 /** The W's MUSIC icon, drawn in code: violet→cyan rounded square with a white W. */
 fun renderAppIcon(size: Int): BufferedImage {
+    // The W's MUSIC logo (white on black, from branding/); the drawn icon below is the fallback.
+    Thread.currentThread().contextClassLoader?.getResourceAsStream("app-icon.png")?.use { stream ->
+        val logo = javax.imageio.ImageIO.read(stream)
+        if (logo != null) {
+            val out = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
+            val g = out.createGraphics()
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC)
+            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            g.drawImage(logo, 0, 0, size, size, null)
+            g.dispose()
+            return out
+        }
+    }
+    return drawnAppIcon(size)
+}
+
+private fun drawnAppIcon(size: Int): BufferedImage {
     val img = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
     val g = img.createGraphics()
     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)

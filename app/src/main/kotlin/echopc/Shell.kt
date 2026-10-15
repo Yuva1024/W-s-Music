@@ -54,6 +54,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -210,11 +211,15 @@ private fun TopBar(c: Controller, onPickAndroidFile: () -> Unit) {
     }
 }
 
-/** The W mark: fixed brand violet, not the album-art accent. */
+/** The W's MUSIC logo mark, white on black (from branding/). */
 @Composable
 private fun BrandMark() {
-    Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Ws.defaultAccent), contentAlignment = Alignment.Center) {
-        Text("W", style = MaterialTheme.typography.titleMedium.copy(fontFamily = BrandFont), color = Color.White)
+    val logo = remember {
+        Thread.currentThread().contextClassLoader?.getResourceAsStream("logo-mark.png")?.use { javax.imageio.ImageIO.read(it) }?.toComposeImageBitmap()
+    }
+    Box(Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).background(Color.Black), contentAlignment = Alignment.Center) {
+        if (logo != null) androidx.compose.foundation.Image(logo, "W's MUSIC", Modifier.size(26.dp))
+        else Text("W", style = MaterialTheme.typography.titleMedium.copy(fontFamily = BrandFont), color = Color.White)
     }
 }
 
