@@ -33,6 +33,7 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Keyboard
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
@@ -91,7 +92,7 @@ private fun Modifier.sideButtonNavigation(c: Controller): Modifier = pointerInpu
 }
 
 @Composable
-fun AppContent(c: Controller, onPickAndroidFile: () -> Unit) {
+fun AppContent(c: Controller, onPickAndroidFile: () -> Unit, onPickSpotifyFile: () -> Unit = {}) {
     Box(Modifier.fillMaxSize().background(Ws.bg0).sideButtonNavigation(c)) {
         Column(Modifier.fillMaxSize()) {
             TopBar(c, onPickAndroidFile)
@@ -127,6 +128,7 @@ fun AppContent(c: Controller, onPickAndroidFile: () -> Unit) {
         if (c.updateDialogOpen) UpdateDialog(c)
         if (c.newPlaylistOpen) NameDialog("New playlist", "", "Create", onConfirm = c::createPlaylist, onDismiss = { c.newPlaylistOpen = false; c.newPlaylistFor = null })
         ImportDialog(c)
+        if (c.spotifyImportOpen) SpotifyImportDialog(c, onPickSpotifyFile)
     }
 }
 
@@ -207,6 +209,7 @@ private fun TopBar(c: Controller, onPickAndroidFile: () -> Unit) {
             )
             WsIconButton(Icons.Rounded.Keyboard, "Keyboard shortcuts", { c.shortcutsOpen = true }, size = 32.dp, iconSize = 20.dp, shortcut = Shortcut.HELP.keys)
             WsIconButton(Icons.Rounded.FileUpload, "Import from the Android app", onPickAndroidFile, size = 32.dp, iconSize = 18.dp)
+            WsIconButton(Icons.Rounded.LibraryMusic, "Import from Spotify", { c.spotifyImportOpen = true }, size = 32.dp, iconSize = 18.dp)
         }
     }
 }
@@ -342,6 +345,28 @@ fun ConfirmDialog(title: String, message: String, confirmLabel: String, onConfir
     )
 }
 
+/** Paste a Spotify playlist or album link, or choose the Spotify data download for everything (all playlists, likes, history). */
+@Composable
+private fun SpotifyImportDialog(c: Controller, onPickFile: () -> Unit) {
+    var link by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = { c.spotifyImportOpen = false }, containerColor = Ws.surfaceHi, shape = RoundedCornerShape(8.dp),
+        title = { Text("Import from Spotify", style = MaterialTheme.typography.headlineMedium, color = Ws.text) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Paste a playlist or album link (in Spotify: Share › Copy link). The songs become a playlist here and shape your taste and mixes.",
+                    style = MaterialTheme.typography.bodyMedium, color = Ws.muted)
+                OutlinedTextField(link, { link = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Spotify link") }, shape = RoundedCornerShape(4.dp))
+                Text("Long playlists (over 100 songs), private playlists, liked songs and listening history: in Spotify go to Account › Privacy › Download your data, then choose the .zip they email you.",
+                    style = MaterialTheme.typography.bodySmall, color = Ws.muted)
+                OutlineButton("Choose Spotify data file…", { c.spotifyImportOpen = false; onPickFile() })
+            }
+        },
+        confirmButton = { PrimaryButton("Import", { c.importSpotifyLink(link) }, enabled = SpotifyLink.looksLikeLink(link)) },
+        dismissButton = { OutlineButton("Cancel", { c.spotifyImportOpen = false }) },
+    )
+}
+
 @Composable
 private fun ImportDialog(c: Controller) {
     when (val s = c.importUi) {
@@ -349,8 +374,14 @@ private fun ImportDialog(c: Controller) {
         is ImportUi.Running -> AlertDialog(
             onDismissRequest = {}, containerColor = Ws.surfaceHi, shape = RoundedCornerShape(8.dp),
             title = { Text("Importing", style = MaterialTheme.typography.headlineMedium, color = Ws.text) },
-            text = { Text("Reading ${s.fileName}. This takes a few seconds.", style = MaterialTheme.typography.bodyMedium, color = Ws.muted) },
-            confirmButton = {},
+            text = { Text(s.detail.ifEmpty { "Reading ${s.fileName}. This takes a few seconds." }, style = MaterialTheme.typography.bodyMedium, color = Ws.muted) },
+            confirmButton = { if (s.cancellable) OutlineButton("Stop", { c.cancelSpotifyImport() }) },
+        )
+        is ImportUi.Message -> AlertDialog(
+            onDismissRequest = { c.importUi = ImportUi.Idle }, containerColor = Ws.surfaceHi, shape = RoundedCornerShape(8.dp),
+            title = { Text(s.title, style = MaterialTheme.typography.headlineMedium, color = Ws.text) },
+            text = { Text(s.text, style = MaterialTheme.typography.bodyMedium, color = Ws.muted) },
+            confirmButton = { PrimaryButton("Done", { c.importUi = ImportUi.Idle }) },
         )
         is ImportUi.Done -> AlertDialog(
             onDismissRequest = { c.importUi = ImportUi.Idle }, containerColor = Ws.surfaceHi, shape = RoundedCornerShape(8.dp),

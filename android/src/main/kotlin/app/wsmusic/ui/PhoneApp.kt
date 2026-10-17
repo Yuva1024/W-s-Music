@@ -118,6 +118,8 @@ fun PhoneApp(c: Controller) {
         }
         if (c.newPlaylistOpen) NameDialog("New playlist", "", "Create", { c.createPlaylist(it) }, { c.newPlaylistOpen = false; c.newPlaylistFor = null })
         if (c.updateDialogOpen) UpdateDialog(c)
+        if (c.spotifyImportOpen) SpotifyImportDialog(c)
+        ImportProgressDialog(c)
     }
 }
 

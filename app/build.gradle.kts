@@ -37,7 +37,7 @@ dependencies {
 }
 
 // One place for the version: the installer, the Updater (version.properties) and the release tag must agree.
-val appVersion = "1.0.3"
+val appVersion = "1.0.5"
 
 tasks.processResources {
     inputs.property("appVersion", appVersion)

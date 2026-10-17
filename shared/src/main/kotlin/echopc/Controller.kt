@@ -156,7 +156,9 @@ sealed interface DetailUi {
 
 sealed interface ImportUi {
     data object Idle : ImportUi
-    data class Running(val fileName: String) : ImportUi
+    data class Running(val fileName: String, val detail: String = "", val cancellable: Boolean = false) : ImportUi
+    /** A finished import with a plain-words summary. */
+    data class Message(val title: String, val text: String) : ImportUi
     data class Done(val result: ImportResult) : ImportUi
     data class Failed(val message: String) : ImportUi
 }
@@ -275,6 +277,10 @@ class Controller(
     var toast by mutableStateOf<String?>(null)
     var toastAction by mutableStateOf<ToastAction?>(null)
     var importUi by mutableStateOf<ImportUi>(ImportUi.Idle)
+    /** The "Import from Spotify" dialog (paste a link, or choose the Spotify data file). */
+    var spotifyImportOpen by mutableStateOf(false)
+    /** Text for the dialog's link field (filled when a link is shared to the phone app from Spotify). */
+    var spotifyImportDraft by mutableStateOf("")
     var likedIds by mutableStateOf<Set<String>>(emptySet())
     var newPlaylistFor by mutableStateOf<SongItem?>(null) // song to add once created
     var newPlaylistOpen by mutableStateOf(false)
@@ -1140,6 +1146,41 @@ class Controller(
                 refreshMixes(force = true)
             }
         }
+    }
+
+    private var spotifyImportJob: Job? = null
+
+    /** Imports a public Spotify playlist or album from a pasted link. */
+    fun importSpotifyLink(text: String) = runSpotifyImport("Spotify link", "Opening the Spotify page…") { SpotifyLink.fetch(text) }
+
+    /** Imports the Spotify data download (.zip) or one of its .json files; [read] gives the file's bytes. */
+    fun importSpotifyFile(name: String, read: () -> ByteArray) =
+        runSpotifyImport(name, "Reading $name…") { SpotifyFiles.read(name, read()) }
+
+    private fun runSpotifyImport(source: String, firstStep: String, load: suspend () -> SpotifyExport) {
+        spotifyImportOpen = false
+        spotifyImportJob?.cancel()
+        importUi = ImportUi.Running(source, firstStep, cancellable = true)
+        spotifyImportJob = scope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val export = load()
+                SpotifyImporter(library).import(export) { done, total ->
+                    importUi = ImportUi.Running(source, "Finding your songs on YouTube Music: $done of $total", cancellable = true)
+                }
+            }
+            if (result.exceptionOrNull() is kotlinx.coroutines.CancellationException) return@launch
+            importUi = result.fold(
+                { ImportUi.Message("Spotify import complete", it.text()) },
+                { AppHooks.log("Spotify import failed: ${it.message?.take(200)}"); ImportUi.Failed(it.message ?: "The Spotify import didn't work") },
+            )
+            if (result.isSuccess) { recommender.invalidateEmpty(); refreshMixes(force = true) } // the new songs change taste
+        }
+    }
+
+    fun cancelSpotifyImport() {
+        spotifyImportJob?.cancel()
+        importUi = ImportUi.Idle
+        showToast("Import stopped")
     }
 
     fun showToast(text: String, action: ToastAction? = null) {

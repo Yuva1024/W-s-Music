@@ -98,6 +98,14 @@ class LibraryRepository(private val db: LibraryDatabase) {
         )
     }
 
+    /** Marks the song as liked (does nothing if it already is; [toggleLike] would un-like it). */
+    suspend fun like(item: SongItem) {
+        val song = save(item)
+        if (song.liked) return
+        val now = LocalDateTime.now()
+        dao.update(song.copy(liked = true, likedDate = now, inLibrary = song.inLibrary ?: now))
+    }
+
     suspend fun addToLibrary(item: SongItem) {
         val song = save(item)
         if (song.inLibrary == null) dao.update(song.copy(inLibrary = LocalDateTime.now()))

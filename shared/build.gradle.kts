@@ -12,4 +12,5 @@ dependencies {
     api("org.jetbrains.compose.runtime:runtime:1.12.1")
     api("org.jetbrains.compose.ui:ui-graphics:1.12.1")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:3.6.0") // kotlinx.serialization.json for the Spotify import
 }

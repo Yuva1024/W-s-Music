@@ -152,10 +152,11 @@ private fun EmptyLibraryCard(c: Controller, onPickAndroidFile: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text("Create your first playlist", style = MaterialTheme.typography.titleMedium, color = Ws.text)
-        Text("Collect songs you love, or bring your playlists over from the Android app.", style = MaterialTheme.typography.bodySmall, color = Ws.muted)
+        Text("Collect songs you love, or bring your playlists over from the Android app or Spotify.", style = MaterialTheme.typography.bodySmall, color = Ws.muted)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PrimaryButton("Create playlist", { c.newPlaylistFor = null; c.newPlaylistOpen = true })
         }
         OutlineButton("Import from Android", onPickAndroidFile)
+        OutlineButton("Import from Spotify", { c.spotifyImportOpen = true })
     }
 }

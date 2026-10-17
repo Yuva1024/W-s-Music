@@ -109,6 +109,12 @@ private fun runApp() = application {
                 val name = dialog.file
                 val dir = dialog.directory
                 if (name != null && dir != null) controller.importAndroid(File(dir, name))
+            }, onPickSpotifyFile = {
+                val dialog = FileDialog(window, "Choose your Spotify data (my_spotify_data.zip, or a .json file from it)", FileDialog.LOAD)
+                dialog.isVisible = true
+                val name = dialog.file
+                val dir = dialog.directory
+                if (name != null && dir != null) controller.importSpotifyFile(name) { File(dir, name).readBytes() }
             })
         }
     }
