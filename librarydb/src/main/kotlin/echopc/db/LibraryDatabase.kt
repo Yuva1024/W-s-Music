@@ -34,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
  *
  * v1: library, playlists, history, lyrics. v2: + desktop recommendation tables ([ListenSignal],
  * [Feedback], [GeneratedMix], [RelatedCache], [ShelfStat]); see [MIGRATION_1_2]. v3: + [TastePick] ([MIGRATION_2_3]).
+ * v4: + [SyncOp], [SyncKv] for Wi-Fi sync between the user's devices ([MIGRATION_3_4]).
  */
 @Database(
     entities = [
@@ -56,13 +57,15 @@ import kotlinx.coroutines.Dispatchers
         RelatedCache::class,
         ShelfStat::class,
         TastePick::class,
+        SyncOp::class,
+        SyncKv::class,
     ],
     views = [
         SortedSongArtistMap::class,
         SortedSongAlbumMap::class,
         PlaylistSongMapPreview::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -100,8 +103,20 @@ abstract class LibraryDatabase : RoomDatabase() {
             builder
                 .setDriver(BundledSQLiteDriver())
                 .setQueryCoroutineContext(Dispatchers.IO)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
+
+        /** Adds the sync tables. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(connection: SQLiteConnection) {
+                listOf(
+                    "CREATE TABLE IF NOT EXISTS `sync_op` (`id` TEXT NOT NULL, `origin` TEXT NOT NULL, `seq` INTEGER NOT NULL, `category` TEXT NOT NULL, `key` TEXT NOT NULL, `type` TEXT NOT NULL, `at` INTEGER NOT NULL, `data` TEXT NOT NULL, PRIMARY KEY(`id`))",
+                    "CREATE INDEX IF NOT EXISTS `index_sync_op_origin_category_seq` ON `sync_op` (`origin`, `category`, `seq`)",
+                    "CREATE INDEX IF NOT EXISTS `index_sync_op_key` ON `sync_op` (`key`)",
+                    "CREATE TABLE IF NOT EXISTS `sync_kv` (`k` TEXT NOT NULL, `v` TEXT NOT NULL, PRIMARY KEY(`k`))",
+                ).forEach { connection.execSQL(it) }
+            }
+        }
 
         /** Adds the artists the user picked when asked what they like. */
         val MIGRATION_2_3 = object : Migration(2, 3) {

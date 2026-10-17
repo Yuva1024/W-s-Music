@@ -288,6 +288,17 @@ class Controller(
 
     // ---- recommendations ----
     val recommender = Recommender(library, recoSource ?: YouTubeCandidates(library))
+
+    /** Wi-Fi sync with the user's other device (phone <-> computer). Started by [startSync]. */
+    val sync = echopc.sync.SyncManager(library, scope, onChanged = { changed ->
+        if (echopc.sync.SyncCategory.TASTE in changed || echopc.sync.SyncCategory.LIBRARY in changed) {
+            recommender.invalidateEmpty()
+            refreshMixes()
+        }
+    })
+    var syncOpen by mutableStateOf(false)
+
+    fun startSync() = sync.start()
     var mixes by mutableStateOf<List<GeneratedMix>>(emptyList())
     var mixesRefreshing by mutableStateOf(false)
     private var signalsSinceRefresh = 0
@@ -1243,6 +1254,7 @@ class Controller(
 
     /** Saves the last listen and settings; called when the window closes. */
     fun shutdown() {
+        sync.stop()
         val song = playingSong; val ms = playedMax
         val duration = playback.durationMs.takeIf { it > 0 } ?: ((song?.duration ?: 0) * 1000L)
         if (song != null) runBlocking {

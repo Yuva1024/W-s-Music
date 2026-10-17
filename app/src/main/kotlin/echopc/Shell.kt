@@ -34,6 +34,7 @@ import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Keyboard
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Sync
 import androidx.compose.material.icons.rounded.SystemUpdateAlt
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AlertDialog
@@ -129,6 +130,9 @@ fun AppContent(c: Controller, onPickAndroidFile: () -> Unit, onPickSpotifyFile: 
         if (c.newPlaylistOpen) NameDialog("New playlist", "", "Create", onConfirm = c::createPlaylist, onDismiss = { c.newPlaylistOpen = false; c.newPlaylistFor = null })
         ImportDialog(c)
         if (c.spotifyImportOpen) SpotifyImportDialog(c, onPickSpotifyFile)
+        // A phone asking to pair opens the sync dialog so the code can be checked.
+        androidx.compose.runtime.LaunchedEffect(c.sync.pairRequest) { if (c.sync.pairRequest != null) c.syncOpen = true }
+        if (c.syncOpen) SyncDialog(c)
     }
 }
 
@@ -210,6 +214,7 @@ private fun TopBar(c: Controller, onPickAndroidFile: () -> Unit) {
             WsIconButton(Icons.Rounded.Keyboard, "Keyboard shortcuts", { c.shortcutsOpen = true }, size = 32.dp, iconSize = 20.dp, shortcut = Shortcut.HELP.keys)
             WsIconButton(Icons.Rounded.FileUpload, "Import from the Android app", onPickAndroidFile, size = 32.dp, iconSize = 18.dp)
             WsIconButton(Icons.Rounded.LibraryMusic, "Import from Spotify", { c.spotifyImportOpen = true }, size = 32.dp, iconSize = 18.dp)
+            WsIconButton(Icons.Rounded.Sync, "Sync with your phone", { c.syncOpen = true }, size = 32.dp, iconSize = 18.dp)
         }
     }
 }

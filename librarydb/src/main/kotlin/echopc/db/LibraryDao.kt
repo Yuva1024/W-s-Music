@@ -263,6 +263,67 @@ abstract class LibraryDao {
         insertAll(picks)
     }
 
+    // ---- sync between the user's devices (schema v4) ----
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertIgnore(op: SyncOp): Long
+
+    @Query("SELECT origin, category, MAX(seq) AS seq FROM sync_op GROUP BY origin, category")
+    abstract suspend fun syncHave(): List<SyncHave>
+
+    @Query("SELECT * FROM sync_op WHERE origin = :origin AND category = :category AND seq > :after ORDER BY seq LIMIT :limit")
+    abstract suspend fun syncOpsAfter(origin: String, category: String, after: Long, limit: Int): List<SyncOp>
+
+    /** The winning (newest) change of every key of [type]. */
+    @Query("SELECT * FROM sync_op o WHERE type = :type AND NOT EXISTS (SELECT 1 FROM sync_op p WHERE p.`key` = o.`key` AND (p.at > o.at OR (p.at = o.at AND p.id > o.id)))")
+    abstract suspend fun syncLatest(type: String): List<SyncOp>
+
+    @Query("SELECT * FROM sync_op WHERE `key` = :key ORDER BY at DESC, id DESC LIMIT 1")
+    abstract suspend fun syncLatestFor(key: String): SyncOp?
+
+    @Query("SELECT COUNT(*) FROM sync_op")
+    abstract suspend fun syncOpCount(): Long
+
+    @Query("SELECT v FROM sync_kv WHERE k = :k")
+    abstract suspend fun syncKv(k: String): String?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun putSyncKv(kv: SyncKv)
+
+    /** Emits whenever anything that syncs changes (Room re-runs it after writes to these tables). */
+    @Query(
+        "SELECT (SELECT COUNT(*) FROM song WHERE liked) + (SELECT COUNT(*) FROM playlist) + (SELECT COUNT(*) FROM playlist_song_map)" +
+            " + (SELECT COUNT(*) FROM feedback) + (SELECT COUNT(*) FROM taste_pick) + (SELECT COUNT(*) FROM listen_signal) + (SELECT COUNT(*) FROM event)",
+    )
+    abstract fun syncWatch(): Flow<Long>
+
+    @Query("SELECT * FROM playlist WHERE isLocal AND bookmarkedAt IS NOT NULL")
+    abstract suspend fun localPlaylistsNow(): List<PlaylistEntity>
+
+    @Query("SELECT * FROM playlist WHERE id = :id")
+    abstract suspend fun playlistNow(id: String): PlaylistEntity?
+
+    @Query("SELECT m.* FROM playlist_song_map m JOIN playlist p ON p.id = m.playlistId WHERE p.isLocal AND p.bookmarkedAt IS NOT NULL ORDER BY m.playlistId, m.position")
+    abstract suspend fun localPlaylistSongMaps(): List<PlaylistSongMap>
+
+    @Query("DELETE FROM playlist_song_map WHERE playlistId = :playlistId AND songId = :songId")
+    abstract suspend fun removeSongFromPlaylist(playlistId: String, songId: String)
+
+    @Query("SELECT id FROM song WHERE liked")
+    abstract suspend fun likedIdsNow(): List<String>
+
+    @Query("SELECT * FROM listen_signal WHERE id > :after ORDER BY id LIMIT :limit")
+    abstract suspend fun signalsAfterId(after: Long, limit: Int): List<ListenSignal>
+
+    @Query("SELECT * FROM event WHERE id > :after ORDER BY id LIMIT :limit")
+    abstract suspend fun eventsAfterId(after: Long, limit: Int): List<Event>
+
+    @Query("SELECT COUNT(*) FROM listen_signal WHERE songId = :songId AND timestamp = :at")
+    abstract suspend fun countSignal(songId: String, at: LocalDateTime): Int
+
+    @Query("SELECT COUNT(*) FROM event WHERE songId = :songId AND timestamp = :at")
+    abstract suspend fun countEvent(songId: String, at: LocalDateTime): Int
+
     // ---- lyrics cache ----
 
     @Query("SELECT * FROM lyrics WHERE id = :id")

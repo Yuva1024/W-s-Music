@@ -38,6 +38,9 @@ fun Song.toSongItem(): SongItem =
 class LibraryRepository(private val db: LibraryDatabase) {
     private val dao = db.dao()
 
+    /** Direct table access for Wi-Fi sync (echopc.sync), which reads and writes below the usual operations. */
+    val syncDao: LibraryDao get() = dao
+
     // Room returns a song's artists in arbitrary order; restore the stored `position` order.
     private suspend fun List<Song>.withArtistOrder(): List<Song> {
         if (isEmpty()) return this

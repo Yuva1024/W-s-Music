@@ -7,4 +7,6 @@ fun installDesktopHooks() {
     AppHooks.dominantColor = { url -> ThumbCache.load(url, 128)?.dominant }
     AppHooks.loadLyrics = { song -> LyricsRepository.load(song) }
     AppHooks.updates = Updater
+    AppHooks.deviceName = ::desktopName
+    AppHooks.syncServer = { host -> DesktopSyncServer(host) }
 }

@@ -22,6 +22,11 @@ class MainActivity : ComponentActivity() {
         setContent { MaterialTheme(colorScheme = WsColors) { PhoneApp(controller) } }
     }
 
+    override fun onResume() {
+        super.onResume()
+        WsApp.instance.controller.sync.syncSoon(800) // catch up with the computer whenever the app comes back
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)

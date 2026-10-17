@@ -58,7 +58,7 @@ private fun runApp() = application {
     }
     val controller = remember {
         LyricsRepository.store = library
-        Controller(scope, library, if (bench) null else settingsFile()) { onState, onEnded -> AdaptivePlayer(onState, onEnded) }.also { Trace.mark("controller created") }
+        Controller(scope, library, if (bench) null else settingsFile()) { onState, onEnded -> AdaptivePlayer(onState, onEnded) }.also { Trace.mark("controller created"); if (!bench) it.startSync() }
     }
     val shortcuts = remember { ShortcutHandler(controller) }
     val icon = remember { BitmapPainter(renderAppIcon(256).toComposeImageBitmap()) }

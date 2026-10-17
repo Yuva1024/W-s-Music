@@ -270,6 +270,10 @@ fun LibraryScreen(c: Controller) {
         itemsIndexed(playlists) { _, p ->
             LibraryRow(p.playlist.name, "Playlist • ${p.songCount} songs", p.thumbnails.firstOrNull(), WsIcons.Queue) { c.navigate(Route.LocalPlaylist(p.playlist.id)) }
         }
+        item {
+            val pc = c.sync.peers.firstOrNull { it.role == "pc" }
+            LibraryRow("Sync with computer", if (pc != null) "Paired with ${pc.name}" else "Share your library over Wi-Fi", null, WsIcons.Sync) { c.syncOpen = true }
+        }
         item { LibraryRow("Import from Spotify", "Playlists, liked songs and history", null, WsIcons.Download) { c.spotifyImportOpen = true } }
         item {
             Text("Pick artists you like", Modifier.fillMaxWidth().clickable { c.openPicker() }.padding(16.dp), color = c.accent.highlight)

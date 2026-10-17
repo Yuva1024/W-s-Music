@@ -40,4 +40,11 @@ object AppHooks {
     @Volatile var loadLyrics: suspend (SongItem) -> LyricsUiState = { LyricsUiState.NotFound }
     /** Self-update; null where there is none. */
     @Volatile var updates: UpdateService? = null
+    /** This device's name as other devices see it when syncing ("Kiran's PC", "Redmi Note 8"). */
+    @Volatile var deviceName: () -> String = { "W's MUSIC" }
+    /**
+     * Starts the Wi-Fi sync listener (HTTP + discovery) for the given handler; the computer has one, the phone
+     * doesn't (it connects to the computer). Closing the result stops listening.
+     */
+    @Volatile var syncServer: ((echopc.sync.SyncManager.SyncHost) -> AutoCloseable)? = null
 }

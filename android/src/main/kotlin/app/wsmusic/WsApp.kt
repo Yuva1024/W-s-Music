@@ -39,6 +39,7 @@ class WsApp : Application() {
         AppHooks.backgroundDelayMs = 6_000
         AppHooks.dominantColor = { url -> Artwork.dominant(url) }
         AppHooks.updates = AndroidUpdater(this)
+        AppHooks.deviceName = { android.os.Build.MODEL?.takeIf { it.isNotBlank() } ?: "Phone" }
 
         val db = LibraryDatabase.configure(Room.databaseBuilder(this, LibraryDatabase::class.java, getDatabasePath("library.db").absolutePath))
         val library = LibraryRepository(db)
@@ -47,6 +48,7 @@ class WsApp : Application() {
         }
         engine.songLookup = { id -> controller.queue.items.firstOrNull { it.id == id } }
         controller.warmUp()
+        controller.startSync()
         scope.launch {
             delay(20_000) // after the first screen and song, not during start-up
             controller.checkForUpdates()
