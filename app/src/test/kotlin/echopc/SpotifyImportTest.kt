@@ -30,6 +30,19 @@ class SpotifyImportTest {
     }
 
     @Test
+    fun readsCopiedSongLinks() {
+        // Ctrl+A, Ctrl+C in the Spotify desktop app: one link per line (sometimes with ?si= and language paths).
+        val pasted = "https://open.spotify.com/track/3XmwAZpIMNpTJy8faw3ajD\nhttps://open.spotify.com/intl-de/track/70cHKK8bHAfJrOGVnfRG9J?si=x\r\n" +
+            "spotify:track:3XmwAZpIMNpTJy8faw3ajD\n"
+        assertEquals(listOf("3XmwAZpIMNpTJy8faw3ajD", "70cHKK8bHAfJrOGVnfRG9J"), SpotifyLink.trackIds(pasted))
+        assertTrue(SpotifyLink.trackIds("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M").isEmpty())
+        val html = """<script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"state":{"data":{"entity":{"type":"track","name":"Nicole Kidman",
+            "artists":[{"name":"ADÉLA","uri":"spotify:artist:1"}],"duration":181270}}}}}}</script>"""
+        val t = SpotifyLink.parseTrackEmbed(html, "70cHKK8bHAfJrOGVnfRG9J")!!
+        assertEquals("Nicole Kidman", t.title); assertEquals(listOf("ADÉLA"), t.artists); assertEquals(181, t.durationSec)
+    }
+
+    @Test
     fun readsEmbedPage() {
         val html = """<html><script id="__NEXT_DATA__" type="application/json">{"props":{"pageProps":{"state":{"data":{"entity":{"type":"playlist","name":"Road Trip",
             "trackList":[{"uri":"spotify:track:1","title":"Expectations (feat. Chappell Roan)","subtitle":"Olivia Rodrigo, Chappell Roan","duration":223935,"entityType":"track"},

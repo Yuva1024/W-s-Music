@@ -104,10 +104,63 @@ object SpotifyLink {
             target = parse(finalUrl) ?: parse(body)
         }
         target ?: throw IllegalArgumentException("That doesn't look like a Spotify playlist or album link.")
-        if (target.kind == "track") throw IllegalArgumentException("That's a link to one song. Paste a playlist or album link (Share › Copy link to playlist).")
+        if (target.kind == "track") return fetchTracks(trackIds(text), asLiked = false, playlistName = "From Spotify")
         if (target.kind == "artist") throw IllegalArgumentException("That's an artist link. Paste a playlist or album link, or add the artist with \"Pick artists you like\".")
         val (_, html) = get("https://open.spotify.com/embed/${target.kind}/${target.id}")
         return parseEmbed(html, target.kind)
+    }
+
+    private val trackPattern = Regex("""(?:open\.spotify\.com/(?:intl-[a-z-]+/)?(?:embed/)?track/|spotify:track:)([A-Za-z0-9]{22})""")
+
+    /**
+     * Song links in pasted text, in order. In the Spotify desktop app, selecting songs (Ctrl+A in Liked Songs or a
+     * playlist) and pressing Ctrl+C copies one link per song.
+     */
+    fun trackIds(text: String): List<String> = trackPattern.findAll(text).map { it.groupValues[1] }.distinct().toList()
+
+    /** Reads copied song links (any number, no 100-song limit) as Liked Songs ([asLiked]) or a playlist called [playlistName]. */
+    suspend fun fetchTracks(ids: List<String>, asLiked: Boolean, playlistName: String, progress: (done: Int, total: Int) -> Unit = { _, _ -> }): SpotifyExport {
+        require(ids.isNotEmpty()) { "No Spotify song links found." }
+        var done = 0
+        val tracks = coroutineScope {
+            val gate = Semaphore(3)
+            ids.map { id ->
+                async {
+                    val track = gate.withPermit { readTrack(id) }
+                    synchronized(this@SpotifyLink) { done++; progress(done, ids.size) }
+                    track
+                }
+            }.awaitAll()
+        }
+        val read = tracks.filterNotNull()
+        if (read.isEmpty()) throw IllegalStateException("Spotify didn't answer for these songs. Try again in a minute.")
+        val missed = ids.size - read.size
+        val notes = if (missed > 0) listOf("$missed song links couldn't be read from Spotify; importing again later picks them up.") else emptyList()
+        val name = playlistName.trim().ifEmpty { "From Spotify" }
+        return SpotifyExport(listOf(SpotifyCollection(if (asLiked) "liked" else "playlist", if (asLiked) "Liked Songs" else name, read)), notes)
+    }
+
+    /** One song's title, artists and length from its public embed page; waits and retries when Spotify asks to slow down. */
+    private suspend fun readTrack(id: String): SpotifyTrack? {
+        repeat(4) { attempt ->
+            val response = runCatching { client.get("https://open.spotify.com/embed/track/$id") { header("User-Agent", BROWSER); header("Accept-Language", "en") } }.getOrNull()
+            when {
+                response == null -> kotlinx.coroutines.delay(1000L * (attempt + 1))
+                response.status.value == 429 -> kotlinx.coroutines.delay((response.headers["Retry-After"]?.toLongOrNull() ?: (2L shl attempt)).coerceAtMost(30) * 1000)
+                !response.status.isSuccess() -> return null
+                else -> return runCatching { parseTrackEmbed(response.bodyAsText(), id) }.getOrNull()
+            }
+        }
+        return null
+    }
+
+    fun parseTrackEmbed(html: String, id: String): SpotifyTrack? {
+        val data = Regex("""<script id="__NEXT_DATA__" type="application/json">(.*?)</script>""", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1) ?: return null
+        val e = json.parseToJsonElement(data).obj("props").obj("pageProps").obj("state").obj("data").obj("entity") ?: return null
+        val title = (e.str("name") ?: e.str("title")).orEmpty()
+        if (title.isEmpty()) return null
+        val artists = e.arr("artists")?.mapNotNull { it.str("name") }.orEmpty().ifEmpty { splitArtists(e.str("subtitle").orEmpty()) }
+        return SpotifyTrack("spotify:track:$id", title, artists, durationSec = ((e["duration"] as? kotlinx.serialization.json.JsonPrimitive)?.longOrNull ?: 0L).div(1000).toInt())
     }
 
     /** Reads the song list from an embed page's `__NEXT_DATA__` block. */
@@ -131,7 +184,7 @@ object SpotifyLink {
         }
         if (tracks.isEmpty()) throw IllegalStateException("No songs found on that Spotify page.")
         val notes = if (tracks.size >= EMBED_LIMIT)
-            listOf("Spotify's public page shows the first $EMBED_LIMIT songs only. To bring in a longer playlist completely, use your Spotify data file.")
+            listOf("Spotify's public page shows the first $EMBED_LIMIT songs only. For the whole playlist: in the Spotify desktop app open it, click a song, press Ctrl+A then Ctrl+C, and paste here.")
         else emptyList()
         // Albums become playlists too: the person asked for exactly these songs, together.
         return SpotifyExport(listOf(SpotifyCollection("playlist", name, tracks)), notes)

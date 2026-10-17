@@ -12,6 +12,10 @@ import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -361,20 +365,39 @@ fun ConfirmDialog(title: String, message: String, confirmLabel: String, onConfir
 @Composable
 private fun SpotifyImportDialog(c: Controller, onPickFile: () -> Unit) {
     var link by remember { mutableStateOf("") }
+    var asLiked by remember { mutableStateOf(true) }
+    var name by remember { mutableStateOf("From Spotify") }
+    val songs = remember(link) { SpotifyLink.trackIds(link).size }
     AlertDialog(
         onDismissRequest = { c.spotifyImportOpen = false }, containerColor = Ws.surfaceHi, shape = RoundedCornerShape(8.dp),
         title = { Text("Import from Spotify", style = MaterialTheme.typography.headlineMedium, color = Ws.text) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Paste a playlist or album link (in Spotify: Share › Copy link). The songs become a playlist here and shape your taste and mixes.",
-                    style = MaterialTheme.typography.bodyMedium, color = Ws.muted)
-                OutlinedTextField(link, { link = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Spotify link") }, shape = RoundedCornerShape(4.dp))
-                Text("All playlists and liked songs: on spotify.com go to Account › Privacy settings › Download your data and tick \"Account data\". For full listening history also tick \"Extended streaming history\". Choose each .zip Spotify emails you.",
+            Column(Modifier.widthIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Liked Songs or a whole playlist: in the Spotify desktop app open it, click any song, press Ctrl+A then Ctrl+C, and paste here (Ctrl+V).",
+                    style = MaterialTheme.typography.bodyMedium, color = Ws.text)
+                Text("Or paste a playlist or album link (Share › Copy link; reads up to 100 songs).", style = MaterialTheme.typography.bodySmall, color = Ws.muted)
+                OutlinedTextField(link, { link = it }, Modifier.fillMaxWidth().heightIn(max = 120.dp), maxLines = 4, label = { Text("Paste here") }, shape = RoundedCornerShape(4.dp))
+                if (songs > 1 || (songs == 1 && SpotifyLink.parse(link)?.kind == "track")) {
+                    Text("$songs songs found. Add them to:", style = MaterialTheme.typography.titleSmall, color = Ws.text)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(asLiked, { asLiked = true })
+                        Text("Liked Songs", Modifier.clickable { asLiked = true }, color = Ws.text)
+                        Spacer(Modifier.width(16.dp))
+                        androidx.compose.material3.RadioButton(!asLiked, { asLiked = false })
+                        Text("A new playlist", Modifier.clickable { asLiked = false }, color = Ws.text)
+                    }
+                    if (!asLiked) OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Playlist name") }, shape = RoundedCornerShape(4.dp))
+                }
+                Text("Also possible: the data download from spotify.com (Account › Privacy settings › Download your data). \"Account data\" has all playlists and liked songs; \"Extended streaming history\" has only your plays.",
                     style = MaterialTheme.typography.bodySmall, color = Ws.muted)
                 OutlineButton("Choose Spotify data file…", { c.spotifyImportOpen = false; onPickFile() })
             }
         },
-        confirmButton = { PrimaryButton("Import", { c.importSpotifyLink(link) }, enabled = SpotifyLink.looksLikeLink(link)) },
+        confirmButton = {
+            PrimaryButton("Import", {
+                if (songs > 1 || (songs == 1 && SpotifyLink.parse(link)?.kind == "track")) c.importSpotifySongs(link, asLiked, name) else c.importSpotifyLink(link)
+            }, enabled = SpotifyLink.looksLikeLink(link))
+        },
         dismissButton = { OutlineButton("Cancel", { c.spotifyImportOpen = false }) },
     )
 }

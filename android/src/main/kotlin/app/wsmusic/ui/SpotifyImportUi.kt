@@ -17,6 +17,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -36,21 +38,41 @@ fun SpotifyImportDialog(c: Controller) {
         }
     }
     fun close() { c.spotifyImportOpen = false; c.spotifyImportDraft = "" }
+    var asLiked by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(true) }
+    var name by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf("From Spotify") }
+    val songs = androidx.compose.runtime.remember(c.spotifyImportDraft) { SpotifyLink.trackIds(c.spotifyImportDraft).size }
+    val songList = songs > 1 || (songs == 1 && SpotifyLink.parse(c.spotifyImportDraft)?.kind == "track")
     AlertDialog(
         onDismissRequest = ::close, containerColor = Ws.surfaceHi,
         title = { Text("Import from Spotify") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Paste a playlist or album link. In Spotify: ⋮ › Share › Copy link, or share it straight to W's MUSIC. The songs become a playlist here and shape your taste and mixes.", color = Ws.muted)
-                OutlinedTextField(c.spotifyImportDraft, { c.spotifyImportDraft = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("https://open.spotify.com/playlist/…") })
-                Text("All playlists and liked songs: on spotify.com go to Account › Privacy settings › Download your data and tick \"Account data\". For full listening history also tick \"Extended streaming history\". Choose each .zip Spotify emails you.",
+                OutlinedTextField(c.spotifyImportDraft, { c.spotifyImportDraft = it }, Modifier.fillMaxWidth(), maxLines = 4, placeholder = { Text("https://open.spotify.com/playlist/…") })
+                Text("Liked Songs or a long playlist: on a computer, in the Spotify app open it, click a song, press Ctrl+A then Ctrl+C and paste in W's MUSIC there; with Sync on it comes to this phone too.",
+                    color = Ws.muted, style = MaterialTheme.typography.bodySmall)
+                if (songList) {
+                    Text("$songs songs found. Add them to:", color = Ws.text)
+                    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        androidx.compose.material3.RadioButton(asLiked, { asLiked = true }); Text("Liked Songs", color = Ws.text)
+                        androidx.compose.material3.RadioButton(!asLiked, { asLiked = false }); Text("New playlist", color = Ws.text)
+                    }
+                    if (!asLiked) OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("Playlist name") })
+                }
+                Text("Also possible: the data download from spotify.com (Account › Privacy settings › Download your data). \"Account data\" has all playlists and liked songs; \"Extended streaming history\" has only your plays.",
                     color = Ws.muted, style = MaterialTheme.typography.bodySmall)
                 OutlinedButton({ close(); pickFile.launch(arrayOf("application/zip", "application/json", "application/octet-stream", "text/plain", "*/*")) }) {
                     Text("Choose Spotify data file", color = Ws.text)
                 }
             }
         },
-        confirmButton = { TextButton({ val link = c.spotifyImportDraft; close(); c.importSpotifyLink(link) }, enabled = SpotifyLink.looksLikeLink(c.spotifyImportDraft)) { Text("Import") } },
+        confirmButton = {
+            TextButton({
+                val link = c.spotifyImportDraft
+                close()
+                if (songList) c.importSpotifySongs(link, asLiked, name) else c.importSpotifyLink(link)
+            }, enabled = SpotifyLink.looksLikeLink(c.spotifyImportDraft)) { Text("Import") }
+        },
         dismissButton = { TextButton(::close) { Text("Cancel") } },
     )
 }

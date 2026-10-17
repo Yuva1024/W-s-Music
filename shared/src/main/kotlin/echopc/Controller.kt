@@ -1317,17 +1317,25 @@ class Controller(
     /** Imports a public Spotify playlist or album from a pasted link. */
     fun importSpotifyLink(text: String) = runSpotifyImport("Spotify link", "Opening the Spotify page…") { SpotifyLink.fetch(text) }
 
+    /** Imports song links copied from the Spotify desktop app (Ctrl+A, Ctrl+C) into Liked Songs or a new playlist. */
+    fun importSpotifySongs(text: String, asLiked: Boolean, playlistName: String) {
+        val ids = SpotifyLink.trackIds(text)
+        runSpotifyImport("Spotify songs", "Reading ${ids.size} songs from Spotify…") { step ->
+            SpotifyLink.fetchTracks(ids, asLiked, playlistName) { done, total -> step("Reading songs from Spotify: $done of $total") }
+        }
+    }
+
     /** Imports the Spotify data download (.zip) or one of its .json files; [read] gives the file's bytes. */
     fun importSpotifyFile(name: String, read: () -> ByteArray) =
         runSpotifyImport(name, "Reading $name…") { SpotifyFiles.read(name, read()) }
 
-    private fun runSpotifyImport(source: String, firstStep: String, load: suspend () -> SpotifyExport) {
+    private fun runSpotifyImport(source: String, firstStep: String, load: suspend (step: (String) -> Unit) -> SpotifyExport) {
         spotifyImportOpen = false
         spotifyImportJob?.cancel()
         importUi = ImportUi.Running(source, firstStep, cancellable = true)
         spotifyImportJob = scope.launch(Dispatchers.IO) {
             val result = runCatching {
-                val export = load()
+                val export = load { importUi = ImportUi.Running(source, it, cancellable = true) }
                 SpotifyImporter(library).import(export) { done, total ->
                     importUi = ImportUi.Running(source, "Finding your songs on YouTube Music: $done of $total", cancellable = true)
                 }
