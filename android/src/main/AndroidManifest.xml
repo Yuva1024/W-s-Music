@@ -32,6 +32,14 @@
             </intent-filter>
         </activity>
 
+        <receiver
+            android:name=".UpdatedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <service
             android:name=".PlaybackService"
             android:exported="true"

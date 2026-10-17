@@ -23,6 +23,10 @@ interface UpdateService {
     fun check(): UpdateInfo?
     fun download(info: UpdateInfo, onProgress: (Float) -> Unit): Path
     fun launchInstaller(file: Path)
+    /** True when [launchInstaller] installs without any window and reopens the app by itself. */
+    fun installsSilently(info: UpdateInfo): Boolean = false
+    /** After the app restarts from an update: a sentence saying whether it worked, or null. */
+    fun lastUpdateResult(): String? = null
 }
 
 /**

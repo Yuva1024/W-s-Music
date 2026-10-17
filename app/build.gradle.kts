@@ -37,7 +37,7 @@ dependencies {
 }
 
 // One place for the version: the installer, the Updater (version.properties) and the release tag must agree.
-val appVersion = "1.0.6"
+val appVersion = "1.0.7"
 
 tasks.processResources {
     inputs.property("appVersion", appVersion)
@@ -58,6 +58,8 @@ compose.desktop {
                 menuGroup = "W's MUSIC"
                 shortcut = true
                 perUserInstall = true // installs into the user's profile: no administrator rights needed (school/work PCs)
+                // The id Windows uses to replace an installed version with a newer one (what earlier builds got by default).
+                upgradeUuid = "B797C31E-B15C-3AC1-8DDD-314B44040F14"
                 iconFile.set(project.file("icon.ico"))
             }
         }

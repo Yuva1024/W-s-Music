@@ -111,6 +111,22 @@ class AndroidUpdater(private val context: Context) : UpdateService {
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        pendingFile().writeText(file.toString())
         context.startActivity(intent)
+    }
+
+    private fun pendingFile() = java.io.File(context.filesDir, "update-pending.txt")
+
+    /** After Android installed the update and the app started again: "Updated to …" (and the downloaded APK is removed). */
+    override fun lastUpdateResult(): String? {
+        val pending = pendingFile()
+        if (!pending.exists()) return null
+        val apk = java.io.File(pending.readText().trim())
+        pending.delete()
+        val target = parseVersion(apk.name) ?: return null
+        val now = parseVersion(currentVersion()) ?: return null
+        if (newer(target, now)) return null // the install was cancelled; the update stays on offer
+        runCatching { apk.delete() }
+        return "W's MUSIC was updated to ${currentVersion()}"
     }
 }

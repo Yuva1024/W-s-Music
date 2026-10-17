@@ -251,6 +251,8 @@ class Controller(
     var updateDialogOpen by mutableStateOf(false)
     var updateProgress by mutableStateOf<Float?>(null)   // 0..1 while the installer downloads
     var updateError by mutableStateOf<String?>(null)
+    /** "Installing…" once the download is done (silent updates), shown under the progress bar. */
+    var updateStage by mutableStateOf<String?>(null)
     /** Set by the window: closes the app (saving everything) so the installer can replace it. */
     var requestExit: (() -> Unit)? = null
 
@@ -1227,15 +1229,20 @@ class Controller(
         scope.launch(Dispatchers.IO) {
             runCatching {
                 val updates = AppHooks.updates ?: error("Updates are not available here")
+                updateStage = "Downloading…"
                 val file = updates.download(info) { updateProgress = it }
                 AppHooks.log("Update ${info.version} downloaded from ${info.repo}; starting the installer.")
+                val silent = updates.installsSilently(info)
+                if (silent) updateStage = "Installing… W's MUSIC closes for a few seconds and reopens by itself."
                 updates.launchInstaller(file)
+                if (silent) delay(1800) // time to read it before the window closes
             }.onSuccess {
                 updateProgress = null
                 requestExit?.invoke()
             }.onFailure {
                 AppHooks.log("Update ${info.version} failed: ${it.message?.take(160)}")
                 updateProgress = null
+                updateStage = null
                 updateError = it.message?.take(140) ?: "The update could not be downloaded"
             }
         }
@@ -1244,6 +1251,7 @@ class Controller(
     /** Warms up the stream resolver so the first song starts sooner. */
     fun warmUp() {
         scope.launch(Dispatchers.IO) {
+            runCatching { AppHooks.updates?.lastUpdateResult() }.getOrNull()?.let { scope.launch { delay(1500); showToast(it) } }
             runCatching { if (YouTube.visitorData == null) YouTube.visitorData().onSuccess { YouTube.visitorData = it } }
             loadHome() // the feed no longer waits for the stream resolver warm-up
             delay(AppHooks.backgroundDelayMs) // keep the first seconds light; this only shortens the first song's start

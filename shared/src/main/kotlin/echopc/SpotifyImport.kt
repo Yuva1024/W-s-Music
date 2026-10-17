@@ -143,6 +143,11 @@ object SpotifyLink {
 // =====================================================================================
 
 object SpotifyFiles {
+    /** Spotify's "Extended streaming history" download has plays only; playlists and likes are in "Account data". */
+    const val HISTORY_ONLY_NOTE = "This file has your listening history only. Your playlists and liked songs are in a separate Spotify download: " +
+        "on spotify.com go to Account › Privacy settings › Download your data, tick \"Account data\" and request it. " +
+        "When Spotify emails that .zip, import it here too. Plays already imported aren't counted again."
+
     /** Reads a Spotify data download (.zip) or one of its .json files. Also reads the old browser-extension export. */
     fun read(fileName: String, bytes: ByteArray): SpotifyExport {
         val isZip = bytes.size > 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
@@ -176,7 +181,9 @@ object SpotifyFiles {
         val history = all.filter { it.kind == "listened" }
         val rest = all.filter { it.kind != "listened" }
         val listened = if (history.isEmpty()) emptyList() else listOf(SpotifyCollection("listened", "Listening history", topPlayed(history.flatMap { it.tracks })))
-        val export = SpotifyExport(rest + listened, parts.flatMap { it.notes }.distinct())
+        val notes = parts.flatMap { it.notes }.distinct().toMutableList()
+        if (rest.none { it.kind == "playlist" || it.kind == "liked" }) notes += HISTORY_ONLY_NOTE
+        val export = SpotifyExport(rest + listened, notes)
         if (export.collections.all { it.tracks.isEmpty() && it.artists.isEmpty() }) throw IllegalArgumentException("This file has no songs in it.")
         return export
     }
@@ -350,6 +357,8 @@ class SpotifyImporter(
                 }
                 "liked" -> pairs.forEach { library.like(it.second); liked++ }
                 else -> pairs.forEach { (t, s) -> // "listened" and "album": counted as finished listens, as often as they were played (up to 5)
+                    // Both Spotify downloads have history (Account data a year, Extended streaming history all of it): count a song once.
+                    if (library.syncDao.countSpotifySignals(s.id) > 0) return@forEach
                     val ms = (s.duration ?: 180) * 1000L
                     repeat(t.plays.coerceIn(1, 5)) { library.recordSignal(s, ms, ms, "imported", "trackdone", "spotify:${c.kind}", t.lastPlayed ?: LocalDateTime.now()) }
                     listened++

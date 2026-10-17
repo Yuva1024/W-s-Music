@@ -43,7 +43,7 @@ fun SpotifyImportDialog(c: Controller) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Paste a playlist or album link. In Spotify: ⋮ › Share › Copy link, or share it straight to W's MUSIC. The songs become a playlist here and shape your taste and mixes.", color = Ws.muted)
                 OutlinedTextField(c.spotifyImportDraft, { c.spotifyImportDraft = it }, Modifier.fillMaxWidth(), singleLine = true, placeholder = { Text("https://open.spotify.com/playlist/…") })
-                Text("For long playlists (over 100 songs), private playlists, liked songs and listening history: in Spotify go to Account › Privacy › Download your data, then choose the .zip they email you.",
+                Text("All playlists and liked songs: on spotify.com go to Account › Privacy settings › Download your data and tick \"Account data\". For full listening history also tick \"Extended streaming history\". Choose each .zip Spotify emails you.",
                     color = Ws.muted, style = MaterialTheme.typography.bodySmall)
                 OutlinedButton({ close(); pickFile.launch(arrayOf("application/zip", "application/json", "application/octet-stream", "text/plain", "*/*")) }) {
                     Text("Choose Spotify data file", color = Ws.text)

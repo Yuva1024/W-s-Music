@@ -81,6 +81,17 @@ class UpdaterTest {
     }
 
     @Test
+    fun theSilentMsiIsPreferredOverTheSetup() {
+        val body = """{"tag_name":"v1.0.8","body":"","draft":false,"prerelease":false,"assets":[
+            {"name":"WsMusic-Setup.exe","size":5,"browser_download_url":"https://github.com/$fork/releases/download/v1.0.8/WsMusic-Setup.exe"},
+            {"name":"WsMusic-1.0.8.msi","size":6,"browser_download_url":"https://github.com/$fork/releases/download/v1.0.8/WsMusic-1.0.8.msi"}]}"""
+        val info = assertNotNull(Updater.choose(mapOf(fork to body), "1.0.7"))
+        assertEquals("WsMusic-1.0.8.msi", info.assetName)
+        // Run from the build or tests (not the installed WsMusic.exe) it falls back to the installer window.
+        assertEquals(false, Updater.installsSilently(info))
+    }
+
+    @Test
     fun checksumOfAFileIsComputed() {
         val f = Files.createTempFile("ws-sha", ".bin").also { it.toFile().deleteOnExit() }
         Files.write(f, "abc".toByteArray())

@@ -240,7 +240,7 @@ private fun UpdateDialog(c: Controller) {
         title = { Text("Update available") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Version ${info.version} is ready. Your library, likes and settings are kept; Android asks you to confirm the install.")
+                Text("Version ${info.version} is ready. Your library, likes and settings are kept. Android asks you to tap Update once" + if (android.os.Build.VERSION.SDK_INT < 29) "; then W's MUSIC reopens by itself." else ", then open W's MUSIC again.")
                 if (info.notes.isNotBlank()) Text(info.notes.take(300), color = Ws.muted, style = MaterialTheme.typography.bodySmall)
                 c.updateProgress?.let { p -> LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth()); Text("Downloading… ${(p * 100).toInt()}%", color = Ws.muted) }
                 c.updateError?.let { Text("Update failed: $it", color = Ws.danger) }

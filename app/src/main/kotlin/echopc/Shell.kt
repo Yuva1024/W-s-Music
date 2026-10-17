@@ -289,10 +289,17 @@ internal fun UpdateDialogBody(c: Controller, info: UpdateInfo) {
     Column(Modifier.widthIn(min = 380.dp, max = 520.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Version ${info.version} is ready (you have ${Updater.currentVersion()}).", style = MaterialTheme.typography.bodyLarge, color = Ws.text)
         if (info.notes.isNotBlank()) Text(info.notes.take(400), style = MaterialTheme.typography.bodyMedium, color = Ws.muted, maxLines = 8, overflow = TextOverflow.Ellipsis)
-        Text("W's MUSIC closes, the installer opens, and your library, likes and settings are kept. From ${info.repo} on GitHub.", style = MaterialTheme.typography.bodySmall, color = Ws.muted)
+        val silent = remember(info) { Updater.installsSilently(info) }
+        Text(
+            if (silent) "W's MUSIC downloads the update, closes for a few seconds while it installs, and reopens by itself. Your library, likes and settings are kept. From ${info.repo} on GitHub."
+            else "W's MUSIC closes, the installer opens, and your library, likes and settings are kept. From ${info.repo} on GitHub.",
+            style = MaterialTheme.typography.bodySmall, color = Ws.muted,
+        )
         c.updateProgress?.let { p ->
-            androidx.compose.material3.LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth(), color = LocalAccent.current.highlight, trackColor = Ws.surfaceTop)
-            Text("Downloading… ${(p * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = Ws.muted)
+            val installing = c.updateStage?.startsWith("Installing") == true
+            if (installing) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth(), color = LocalAccent.current.highlight, trackColor = Ws.surfaceTop)
+            else androidx.compose.material3.LinearProgressIndicator(progress = { p }, Modifier.fillMaxWidth(), color = LocalAccent.current.highlight, trackColor = Ws.surfaceTop)
+            Text(if (installing) c.updateStage.orEmpty() else "Downloading… ${(p * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = Ws.muted)
         }
         c.updateError?.let { Text("Update failed: $it", style = MaterialTheme.typography.bodyMedium, color = Ws.danger) }
     }
@@ -362,7 +369,7 @@ private fun SpotifyImportDialog(c: Controller, onPickFile: () -> Unit) {
                 Text("Paste a playlist or album link (in Spotify: Share › Copy link). The songs become a playlist here and shape your taste and mixes.",
                     style = MaterialTheme.typography.bodyMedium, color = Ws.muted)
                 OutlinedTextField(link, { link = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Spotify link") }, shape = RoundedCornerShape(4.dp))
-                Text("Long playlists (over 100 songs), private playlists, liked songs and listening history: in Spotify go to Account › Privacy › Download your data, then choose the .zip they email you.",
+                Text("All playlists and liked songs: on spotify.com go to Account › Privacy settings › Download your data and tick \"Account data\". For full listening history also tick \"Extended streaming history\". Choose each .zip Spotify emails you.",
                     style = MaterialTheme.typography.bodySmall, color = Ws.muted)
                 OutlineButton("Choose Spotify data file…", { c.spotifyImportOpen = false; onPickFile() })
             }

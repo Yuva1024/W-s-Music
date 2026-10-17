@@ -68,8 +68,11 @@ object Updater : UpdateService {
         if (release["draft"]?.jsonPrimitive?.booleanOrNull == true || release["prerelease"]?.jsonPrimitive?.booleanOrNull == true) return null
         val tag = release["tag_name"]?.jsonPrimitive?.contentOrNull ?: return null
         val assets = release["assets"]?.jsonArray?.map { it.jsonObject }.orEmpty()
-        val exes = assets.filter { (it["name"]?.jsonPrimitive?.contentOrNull ?: "").endsWith(".exe", ignoreCase = true) }
-        val asset = exes.firstOrNull { (it["name"]?.jsonPrimitive?.contentOrNull ?: "").contains("setup", ignoreCase = true) } ?: exes.firstOrNull() ?: return null
+        fun name(a: kotlinx.serialization.json.JsonObject) = a["name"]?.jsonPrimitive?.contentOrNull ?: ""
+        // The .msi installs silently (no window, no questions) and the app reopens; the setup .exe is the fallback.
+        val msi = assets.firstOrNull { name(it).endsWith(".msi", ignoreCase = true) }
+        val exes = assets.filter { name(it).endsWith(".exe", ignoreCase = true) }
+        val asset = msi ?: exes.firstOrNull { name(it).contains("setup", ignoreCase = true) } ?: exes.firstOrNull() ?: return null
         val url = asset["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return null
         if (!url.startsWith("https://github.com/$repo/releases/download/")) return null // only this repository's own release files
         val digest = asset["digest"]?.jsonPrimitive?.contentOrNull?.removePrefix("sha256:")?.lowercase()?.takeIf { Regex("[0-9a-f]{64}").matches(it) }
@@ -139,8 +142,57 @@ object Updater : UpdateService {
         }
     }
 
-    /** Starts the downloaded installer (it opens its own window). */
+    /** Starts the downloaded installer. An .msi is installed silently by a hidden helper that then reopens the app. */
     override fun launchInstaller(file: Path) {
-        ProcessBuilder(file.toString()).start()
+        val exe = appExe()
+        if (!file.toString().endsWith(".msi", ignoreCase = true) || exe == null) {
+            ProcessBuilder(if (file.toString().endsWith(".msi", true)) listOf("msiexec", "/i", file.toString()) else listOf(file.toString())).start()
+            return
+        }
+        val dir = file.parent
+        val log = dir.resolve("install.log")
+        val script = dir.resolve("update.ps1")
+        fun q(p: Any) = "'" + p.toString().replace("'", "''") + "'"
+        Files.writeString(script, """
+            |${'$'}ErrorActionPreference = 'SilentlyContinue'
+            |Wait-Process -Id ${appPids().joinToString(",")} -Timeout 90
+            |Start-Sleep -Milliseconds 700
+            |${'$'}p = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', ${q("\"$file\"")}, '/qn', '/norestart', '/l*v', ${q("\"$log\"")}) -Wait -PassThru
+            |Set-Content -Path ${q(dir.resolve("result.txt"))} -Value ${'$'}p.ExitCode
+            |Start-Process -FilePath ${q(exe)}
+            |""".trimMargin())
+        pendingFile().toFile().writeText("${file.fileName}|$dir")
+        ProcessBuilder("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script.toString())
+            .redirectErrorStream(true).redirectOutput(dir.resolve("helper.log").toFile()).start()
+    }
+
+    override fun installsSilently(info: UpdateInfo): Boolean = info.assetName.endsWith(".msi", ignoreCase = true) && appExe() != null
+
+    /** This process and its WsMusic.exe launcher parent: the installer can only replace the files once both have exited. */
+    private fun appPids(): List<Long> {
+        val me = ProcessHandle.current()
+        val parent = me.parent().orElse(null)?.takeIf { p -> p.info().command().orElse("").endsWith("WsMusic.exe", ignoreCase = true) }
+        return listOfNotNull(me.pid(), parent?.pid())
+    }
+
+    /** The installed WsMusic.exe that is running now; null when started another way (from the build, tests). */
+    private fun appExe(): Path? = ProcessHandle.current().info().command().orElse(null)
+        ?.let { Path.of(it) }?.takeIf { it.fileName.toString().equals("WsMusic.exe", ignoreCase = true) && Files.isRegularFile(it) }
+
+    private fun pendingFile(): Path = Path.of(System.getenv("APPDATA") ?: System.getProperty("user.home"), "WsMusic", "update-pending.txt")
+
+    /**
+     * After a silent update the app starts again: says whether it worked (and cleans up the download). Null when
+     * no update was pending.
+     */
+    override fun lastUpdateResult(): String? {
+        val pending = pendingFile()
+        if (!Files.exists(pending)) return null
+        val dir = runCatching { Path.of(Files.readString(pending).substringAfter('|').trim()) }.getOrNull()
+        runCatching { Files.delete(pending) }
+        val code = dir?.let { runCatching { Files.readString(it.resolve("result.txt")).trim().toInt() }.getOrNull() }
+        if (code == 0 || code == 3010) { runCatching { dir.toFile().deleteRecursively() }; return "W's MUSIC was updated to ${currentVersion()}" }
+        Device.log("Silent update failed: msiexec exit code $code, log in $dir")
+        return "The update didn't install (code ${code ?: "unknown"}). You can try again from the update button."
     }
 }

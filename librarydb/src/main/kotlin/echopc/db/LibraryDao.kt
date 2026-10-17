@@ -321,6 +321,9 @@ abstract class LibraryDao {
     @Query("SELECT COUNT(*) FROM listen_signal WHERE songId = :songId AND timestamp = :at")
     abstract suspend fun countSignal(songId: String, at: LocalDateTime): Int
 
+    @Query("SELECT COUNT(*) FROM listen_signal WHERE songId = :songId AND context LIKE 'spotify:%'")
+    abstract suspend fun countSpotifySignals(songId: String): Int
+
     @Query("SELECT COUNT(*) FROM event WHERE songId = :songId AND timestamp = :at")
     abstract suspend fun countEvent(songId: String, at: LocalDateTime): Int
 
