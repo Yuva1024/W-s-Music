@@ -18,7 +18,8 @@ import kotlinx.coroutines.runBlocking
 class DesktopSyncServer(private val host: SyncManager.SyncHost) : AutoCloseable, echopc.sync.HasPort {
     private val server: HttpServer
     private val udp: DatagramSocket?
-    private val pool = Executors.newFixedThreadPool(2) { r -> Thread(r, "sync-http").apply { isDaemon = true } }
+    // Remote control keeps one request waiting per phone, so more than two threads.
+    private val pool = Executors.newFixedThreadPool(6) { r -> Thread(r, "sync-http").apply { isDaemon = true } }
     override val port: Int
 
     init {

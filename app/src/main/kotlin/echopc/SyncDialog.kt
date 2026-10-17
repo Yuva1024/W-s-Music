@@ -15,7 +15,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,4 +118,52 @@ internal fun syncTime(millis: Long): String {
     val t = Instant.ofEpochMilli(millis).atOffset(ZoneOffset.UTC).toLocalDateTime()
     val today = java.time.LocalDate.now()
     return if (t.toLocalDate() == today) "today at " + t.format(DateTimeFormatter.ofPattern("HH:mm")) else t.format(DateTimeFormatter.ofPattern("d MMM, HH:mm"))
+}
+
+/**
+ * "Devices": where the music plays, like Spotify Connect. Picking the phone moves the queue and position there;
+ * picking this computer takes it back. Highlighted while the phone is the one playing.
+ */
+@Composable
+fun DevicesButton(c: Controller) {
+    var open by remember { mutableStateOf(false) }
+    val other = c.sync.remote.other?.takeIf { c.sync.remote.connected }
+    val controlling = c.remoteControlling
+    androidx.compose.foundation.layout.Box {
+        WsIconButton(
+            Icons.Rounded.Devices, if (controlling) "Playing on ${other?.name}" else "Connect to a device",
+            { open = true }, size = 32.dp, iconSize = 18.dp, tint = if (controlling) c.accent.highlight else Ws.muted,
+        )
+        androidx.compose.material3.DropdownMenu(open, { open = false }, containerColor = Ws.surfaceTop) {
+            Text("Play on", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Ws.muted)
+            DeviceRow(c, "This computer", if (controlling) "" else if (c.playback.playing) "Playing" else "", selected = !controlling) {
+                open = false
+                if (controlling) c.playHere()
+            }
+            if (other != null) {
+                DeviceRow(c, other.name, when { other.playing -> "Playing " + (other.current?.title ?: ""); other.current != null -> "Paused"; else -> "Ready" }, selected = controlling) {
+                    open = false
+                    if (!controlling) { if (c.queue.current != null) c.playOnOtherDevice() else c.showToast("Play something first, then move it to ${other.name}") }
+                }
+            } else {
+                Text(
+                    if (c.sync.peers.isEmpty()) "Pair your phone in Sync to play there" else "Your phone isn't connected. Open W's MUSIC on it (same Wi-Fi).",
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp).width(240.dp), style = MaterialTheme.typography.bodySmall, color = Ws.muted,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DeviceRow(c: Controller, name: String, detail: String, selected: Boolean, onClick: () -> Unit) {
+    androidx.compose.material3.DropdownMenuItem(
+        text = {
+            Column {
+                Text(name, color = if (selected) c.accent.highlight else Ws.text, style = MaterialTheme.typography.bodyMedium)
+                if (detail.isNotBlank()) Text(detail, color = Ws.muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            }
+        },
+        onClick = onClick,
+    )
 }

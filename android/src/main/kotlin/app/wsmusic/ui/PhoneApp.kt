@@ -100,7 +100,7 @@ fun PhoneApp(c: Controller) {
                     c.toastAction?.let { a -> Text(a.label, Modifier.clickable { c.runToastAction() }.padding(start = 12.dp), color = Color.Black, fontWeight = FontWeight.Bold) }
                 }
             }
-            if (c.queue.current != null) MiniPlayer(c) { nowPlaying = true }
+            if (c.nowQueue.current != null) MiniPlayer(c) { nowPlaying = true }
             NavigationBar(containerColor = Color.Black, modifier = Modifier.windowInsetsPadding(WindowInsets.navigationBars).height(64.dp)) {
                 val colors = NavigationBarItemDefaults.colors(selectedIconColor = Ws.text, selectedTextColor = Ws.text, unselectedIconColor = Ws.faint, unselectedTextColor = Ws.faint, indicatorColor = Color.Transparent)
                 fun go(t: Tab) {
@@ -126,7 +126,7 @@ fun PhoneApp(c: Controller) {
 
 @Composable
 private fun MiniPlayer(c: Controller, onOpen: () -> Unit) {
-    val song = c.queue.current ?: return
+    val song = c.nowQueue.current ?: return
     val accent = c.accent
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp))
@@ -136,27 +136,33 @@ private fun MiniPlayer(c: Controller, onOpen: () -> Unit) {
             Art(song.thumbnail, 42.dp, corner = 4.dp)
             Column(Modifier.weight(1f)) {
                 Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = Ws.text, style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                val err = c.playback.error
+                val err = c.nowPlayback.error
                 Text(
-                    when { err != null -> playbackErrorText(err); c.playback.loading -> "Loading…"; else -> song.artists.joinToString { it.name } },
+                    when { err != null -> playbackErrorText(err); c.nowPlayback.loading -> "Loading…"; else -> song.artists.joinToString { it.name } },
                     maxLines = 1, overflow = TextOverflow.Ellipsis, color = if (err != null) Ws.danger else Ws.muted, style = MaterialTheme.typography.bodySmall,
                 )
             }
             val liked = song.id in c.likedIds
             IconButton({ c.toggleLike(song) }) { Icon(if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, if (liked) "Remove from Liked Songs" else "Save to Liked Songs", tint = if (liked) accent.highlight else Ws.text) }
-            IconButton({ c.togglePause() }) { Icon(if (c.playback.playing) WsIcons.Pause else Icons.Filled.PlayArrow, if (c.playback.playing) "Pause" else "Play", tint = Ws.text) }
+            IconButton({ c.togglePause() }) { Icon(if (c.nowPlayback.playing) WsIcons.Pause else Icons.Filled.PlayArrow, if (c.nowPlayback.playing) "Pause" else "Play", tint = Ws.text) }
         }
-        val d = c.playback.durationMs
+        val d = c.nowPlayback.durationMs
         LinearProgressIndicator(
-            progress = { if (d > 0) (c.positionMs.toFloat() / d).coerceIn(0f, 1f) else 0f },
+            progress = { if (d > 0) (c.nowPositionMs.toFloat() / d).coerceIn(0f, 1f) else 0f },
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).height(2.dp), color = Ws.text, trackColor = Color.White.copy(alpha = 0.2f), drawStopIndicator = {},
         )
+        c.playingOn?.let { name ->
+            Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(WsIcons.Devices, null, tint = accent.highlight, modifier = Modifier.size(14.dp))
+                Text("Playing on $name", color = accent.highlight, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            }
+        }
     }
 }
 
 @Composable
 private fun NowPlaying(c: Controller, onClose: () -> Unit) {
-    val song = c.queue.current
+    val song = c.nowQueue.current
     val accent = c.accent
     Column(
         Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(lerp(accent.primary, Color.Black, 0.35f), Ws.bg)))
@@ -165,6 +171,9 @@ private fun NowPlaying(c: Controller, onClose: () -> Unit) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClose) { Icon(Icons.Filled.KeyboardArrowDown, "Close", tint = Ws.text) }
             Text("Now playing", Modifier.weight(1f), color = Ws.text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            var devices by remember { mutableStateOf(false) }
+            IconButton({ devices = true }) { Icon(WsIcons.Devices, "Devices", tint = if (c.playingOn != null) accent.highlight else Ws.text) }
+            if (devices) DevicesDialog(c) { devices = false }
         }
         if (song == null) { Message("Nothing is playing."); return@Column }
         LazyColumn(Modifier.weight(1f)) {
@@ -189,19 +198,20 @@ private fun NowPlaying(c: Controller, onClose: () -> Unit) {
                     }
                     IconButton({ c.skipPrevious() }) { Icon(WsIcons.SkipPrevious, "Previous", tint = Ws.text, modifier = Modifier.size(36.dp)) }
                     Box(Modifier.size(68.dp).clip(RoundedCornerShape(50)).background(Color.White).clickable { c.togglePause() }, contentAlignment = Alignment.Center) {
-                        Icon(if (c.playback.playing) WsIcons.Pause else Icons.Filled.PlayArrow, if (c.playback.playing) "Pause" else "Play", tint = Color.Black, modifier = Modifier.size(36.dp))
+                        Icon(if (c.nowPlayback.playing) WsIcons.Pause else Icons.Filled.PlayArrow, if (c.nowPlayback.playing) "Pause" else "Play", tint = Color.Black, modifier = Modifier.size(36.dp))
                     }
                     IconButton({ c.skipNext() }) { Icon(WsIcons.SkipNext, "Next", tint = Ws.text, modifier = Modifier.size(36.dp)) }
                     IconButton({ c.cycleRepeat() }) {
-                        Icon(if (c.queue.repeat == RepeatMode.ONE) WsIcons.RepeatOne else WsIcons.Repeat, "Repeat", tint = if (c.queue.repeat == RepeatMode.OFF) Ws.text else accent.highlight)
+                        Icon(if (c.nowQueue.repeat == RepeatMode.ONE) WsIcons.RepeatOne else WsIcons.Repeat, "Repeat", tint = if (c.nowQueue.repeat == RepeatMode.OFF) Ws.text else accent.highlight)
                     }
                 }
-                c.playback.error?.let { Text(playbackErrorText(it), Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = Ws.danger) }
-                if (c.playback.loading) Text("Loading…", Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = Ws.muted)
+                c.playingOn?.let { Text("Playing on $it", Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = accent.highlight) }
+                c.nowPlayback.error?.let { Text(playbackErrorText(it), Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = Ws.danger) }
+                if (c.nowPlayback.loading) Text("Loading…", Modifier.padding(horizontal = 24.dp, vertical = 8.dp), color = Ws.muted)
                 SectionTitle("Up next")
             }
-            val items = c.queue.items
-            val start = c.queue.index + 1
+            val items = c.nowQueue.items
+            val start = c.nowQueue.index + 1
             itemsIndexed(items.drop(start).take(50)) { i, s ->
                 SongRow(c, s, { c.jumpTo(start + i) })
             }
@@ -212,10 +222,10 @@ private fun NowPlaying(c: Controller, onClose: () -> Unit) {
 
 @Composable
 private fun SeekBar(c: Controller) {
-    val duration = c.playback.durationMs
+    val duration = c.nowPlayback.durationMs
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableFloatStateOf(0f) }
-    val shown = if (dragging) dragValue else if (duration > 0) (c.positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val shown = if (dragging) dragValue else if (duration > 0) (c.nowPositionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
     Column(Modifier.padding(horizontal = 16.dp)) {
         Slider(
             value = shown,

@@ -71,7 +71,7 @@ private fun PanelHeader(title: String, onClose: () -> Unit, modifier: Modifier =
 @Composable
 private fun NowPlayingView(c: Controller) {
     val accent = LocalAccent.current
-    val song = c.queue.current
+    val song = c.nowQueue.current
     // The panel is flooded with the album-art colour, fading into the panel grey.
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to accent.flood, 0.55f to Ws.surface))) {
         if (song == null) {
@@ -105,7 +105,7 @@ private fun NowPlayingView(c: Controller) {
             }
             item("lyrics") { LyricsPreview(c) }
             item("credits") { CreditsCard(song) }
-            c.queue.upNext?.takeIf { it.id != song.id || c.queue.repeat == RepeatMode.ONE }?.let { next ->
+            c.nowQueue.upNext?.takeIf { it.id != song.id || c.nowQueue.repeat == RepeatMode.ONE }?.let { next ->
                 item("next") { NextInQueueCard(c, next) }
             }
         }
@@ -188,7 +188,7 @@ private fun NextInQueueCard(c: Controller, next: SongItem) {
 
 @Composable
 private fun QueueView(c: Controller) {
-    val q = c.queue
+    val q = c.nowQueue
     val listState = rememberLazyListState()
     LaunchedEffect(q.index) { if (q.index > 0) listState.scrollToItem(0) }
     Column(Modifier.fillMaxSize()) {
@@ -228,7 +228,7 @@ private fun QueueSectionTitle(text: String, modifier: Modifier = Modifier) {
 @Composable
 private fun QueueRow(c: Controller, song: SongItem, index: Int, current: Boolean) {
     val accent = LocalAccent.current
-    val recommended = c.queue.isRecommended(index)
+    val recommended = c.nowQueue.isRecommended(index)
     HoverRow({ c.jumpTo(index) }, menu = { close -> SongMenuItems(c, song, c.queueContext, close, queueIndex = index) }) { hovered ->
         Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Thumb(song.thumbnail, 44.dp, corner = 4.dp, seed = song.title)
@@ -242,7 +242,7 @@ private fun QueueRow(c: Controller, song: SongItem, index: Int, current: Boolean
             if (recommended && !current) {
                 if (c.canKeepRecommendations) WsIconButton(Icons.Rounded.AddCircleOutline, "Add to this playlist", { c.addRecommendationToPlaylist(index) }, size = 28.dp, iconSize = 18.dp, tint = Ws.text)
                 WsIconButton(Icons.Rounded.RemoveCircleOutline, "Remove recommendation", { c.removeRecommendation(index) }, size = 28.dp, iconSize = 18.dp, tint = Ws.text)
-            } else if (current) EqBars(c.playback.playing)
+            } else if (current) EqBars(c.nowPlayback.playing)
             else WsIconButton(
                 Icons.Rounded.Close, "Remove from queue", { c.removeFromQueue(index) }, size = 28.dp, iconSize = 16.dp,
                 tint = if (hovered) Ws.muted else androidx.compose.ui.graphics.Color.Transparent,

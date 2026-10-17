@@ -106,12 +106,16 @@ class SyncManager(
     private val onChanged: (Set<String>) -> Unit = {},
 ) {
     val store = SyncStore(library)
+    /** Spotify-Connect-style remote control and handoff over the same pairing. */
+    val remote = RemoteLink(this, scope)
     private val dao = library.syncDao
 
     /** The computer runs the server; the phone app has none and connects to it. */
     val isPc: Boolean get() = serverFactory != null
 
     var peers by mutableStateOf<List<SyncPeer>>(emptyList()); private set
+    /** This device's id (known once [start] has run). */
+    var myId by mutableStateOf(""); private set
     var syncLibrary by mutableStateOf(true); private set
     var syncTaste by mutableStateOf(true); private set
     var status by mutableStateOf<String?>(null)
@@ -146,6 +150,7 @@ class SyncManager(
 
     fun start() {
         scope.launch(Dispatchers.IO) {
+            myId = store.deviceId()
             peers = loadPeers()
             syncLibrary = store.enabled(SyncCategory.LIBRARY)
             syncTaste = store.enabled(SyncCategory.TASTE)
@@ -196,6 +201,7 @@ class SyncManager(
         } else if (!paired) {
             loopJob?.cancel(); loopJob = null
         }
+        if (!isPc) { if (peers.any { it.role == "pc" }) remote.startLoop() else remote.stopLoop() }
     }
 
     /** App closing: stop listening. */
@@ -313,7 +319,7 @@ class SyncManager(
                     if (session?.phoneId == id) { session = null; pairRequest = null }
                     json(buildJsonObject { put("ok", true) })
                 }
-                "/sync/pull", "/sync/push" -> sealed(path, device, body)
+                "/sync/pull", "/sync/push", "/remote/poll", "/remote/state", "/remote/cmd" -> sealed(path, device, body)
                 else -> SyncResponse(404, "{}".toByteArray())
             }
         }.getOrElse { e ->
@@ -349,6 +355,10 @@ class SyncManager(
             val key = SyncCrypto.unb64(peer.key)
             val aad = (path + device).toByteArray()
             val req = syncJson.parseToJsonElement(gunzip(SyncCrypto.open(key, body, aad)).decodeToString()).jsonObject
+            if (path.startsWith("/remote/")) {
+                val reply = remote.handle(peer, path, req)
+                return SyncResponse(200, SyncCrypto.seal(key, gzip(reply.toString().toByteArray()), aad), "application/octet-stream")
+            }
             val reply = when (path) {
                 "/sync/pull" -> {
                     val allowed = (req["cats"] as? JsonArray).orEmpty().mapNotNull { (it as? kotlinx.serialization.json.JsonPrimitive)?.content }.filter { it in myCategories() }
@@ -541,6 +551,10 @@ class SyncManager(
         if (sent == 0) sealedPost(pc, peer, "/sync/push", buildJsonObject { put("ops", JsonArray(emptyList())); put("name", AppHooks.deviceName()) }) // marks the sync time on the computer
         return sent
     }
+
+    /** An encrypted request to the paired computer at its last known address. */
+    internal suspend fun call(peer: SyncPeer, path: String, body: JsonObject): JsonObject =
+        sealedPost(FoundPc(peer.id, peer.name, peer.host, peer.port), peer, path, body)
 
     private suspend fun sealedPost(pc: FoundPc, peer: SyncPeer, path: String, body: JsonObject): JsonObject {
         val key = SyncCrypto.unb64(peer.key)

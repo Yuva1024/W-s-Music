@@ -14,8 +14,8 @@ android {
         applicationId = "app.wsmusic"
         minSdk = 23 // Android 6.0
         targetSdk = 36
-        versionCode = 10007 // major*10000 + minor*100 + patch
-        versionName = "1.0.7"
+        versionCode = 10008 // major*10000 + minor*100 + patch
+        versionName = "1.0.8"
     }
 
     // Release builds are signed with the permanent key described in keystore.properties (kept out of git).

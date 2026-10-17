@@ -36,6 +36,9 @@ import echopc.reco.ShelfBandit
 import echopc.reco.YouTubeCandidates
 import java.io.File
 import java.util.Properties
+import echopc.sync.RemoteCommand
+import echopc.sync.RemotePlayer
+import echopc.sync.RemoteState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -208,7 +211,7 @@ class Controller(
     recoSource: CandidateSource? = null,
     discoverySource: DiscoverySource? = null,
     engineFactory: (onState: (PlayerState) -> Unit, onEnded: () -> Unit) -> PlayerEngine,
-) {
+) : RemotePlayer {
     // ---- navigation ----
     var backStack by mutableStateOf<List<Route>>(listOf(Route.Home))
         private set
@@ -372,15 +375,25 @@ class Controller(
         scope.launch { library.feedback.collect { blocks = Blocks.from(it) } }
         scope.launch { loadShelfStats() }
         scope.launch(Dispatchers.IO) { for (write in playLog) runCatching { write() } }
+        sync.remote.player = this
+        // Tell the other device when what plays here changes (not on every position tick).
+        scope.launch {
+            androidx.compose.runtime.snapshotFlow {
+                listOf(queue.current?.id, queue.index, queue.items.size, playback.playing, playback.loading, playback.durationMs, volume, queue.repeat)
+            }.collect { sync.remote.localChanged() }
+        }
     }
 
     // ---------------- engine callbacks ----------------
 
     private fun onEngineState(s: PlayerState) {
+        if (s.playing) lastPlayedAt = System.currentTimeMillis()
+        if (pendingSeekMs > 0 && s.durationMs > 0 && !s.loading) { val to = pendingSeekMs; pendingSeekMs = 0; engine.seek(to); positionMs = to }
+        if (pendingPause && s.playing) { pendingPause = false; engine.togglePause() }
         if (s.positionMs != positionMs) positionMs = s.positionMs
         if (s.positionMs > playedMax) playedMax = s.positionMs
         val flags = s.copy(positionMs = 0)
-        if (flags != playback) playback = flags
+        if (flags != playback) { playback = flags; sync.remote.localChanged() }
     }
 
     private fun onEnded() = skipNext(auto = true)
@@ -427,6 +440,7 @@ class Controller(
         playContext = if (song.id in radioIds) "radio" else queueContext
         positionMs = 0
         engine.play(song.id, queue.upNext?.id)
+        sync.remote.localChanged()
         if (queue.upNext == null && autoplay) extendWithRadio(song, thenPlayFirstNew = false, ended = ended)
         loadSideEffects(song)
     }
@@ -462,6 +476,11 @@ class Controller(
     }
 
     fun skipNext(auto: Boolean = false) {
+        if (!auto && remoteControlling) { sync.remote.send(RemoteCommand.simple("next")); return }
+        localSkipNext(auto)
+    }
+
+    private fun localSkipNext(auto: Boolean) {
         val ni = queue.nextIndex(auto)
         val reason = if (auto) EndReason.TRACK_DONE else EndReason.FWD_BUTTON
         when {
@@ -472,11 +491,21 @@ class Controller(
     }
 
     fun skipPrevious() {
-        if (positionMs > 3000) { seek(0); return }
+        if (remoteControlling) { sync.remote.send(RemoteCommand.simple("prev")); return }
+        localSkipPrevious()
+    }
+
+    private fun localSkipPrevious() {
+        if (positionMs > 3000) { localSeek(0); return }
         queue.previousIndex()?.let { queue = queue.jump(it); startCurrent(StartReason.BACK_BUTTON, EndReason.BACK_BUTTON, backwards = true) }
     }
 
-    fun togglePause() = engine.togglePause()
+    fun togglePause() {
+        if (remoteControlling) { sync.remote.send(RemoteCommand.simple("toggle")); return }
+        val resuming = !playback.playing
+        engine.togglePause()
+        if (resuming) claimActive()
+    }
 
     fun toggleMute() {
         if (volume == 0f) changeVolume(volumeBeforeMute.coerceAtLeast(0.05f))
@@ -511,20 +540,30 @@ class Controller(
     }
 
     private fun seekBy(deltaMs: Long) {
-        val duration = playback.durationMs
-        if (queue.current == null || duration <= 0) return
-        seek((positionMs + deltaMs).coerceIn(0L, duration))
+        val duration = nowPlayback.durationMs
+        if (nowQueue.current == null || duration <= 0) return
+        seek((nowPositionMs + deltaMs).coerceIn(0L, duration))
     }
 
     private fun nudgeVolume(delta: Float) {
         changeVolume((volume + delta).coerceIn(0f, 1f))
         showToast("Volume ${(volume * 100).toInt()}%")
     }
-    fun seek(ms: Long) { positionMs = ms; engine.seek(ms) }
-    fun changeVolume(v: Float) { volume = v; engine.setVolume(v.toDouble()) }
+    fun seek(ms: Long) { if (remoteControlling) sync.remote.send(RemoteCommand.seek(ms)) else localSeek(ms) }
+    private fun localSeek(ms: Long) { positionMs = ms; engine.seek(ms); sync.remote.localChanged() }
+    fun changeVolume(v: Float) { if (remoteControlling) sync.remote.send(RemoteCommand.volume(v)) else localVolume(v) }
+    private fun localVolume(v: Float) { volume = v; engine.setVolume(v.toDouble()); sync.remote.localChanged() }
 
     /** Plays [list] from [index]; the page it was started from becomes the play context. */
     fun playFromList(list: List<SongItem>, index: Int, context: String = routeContext(route)) {
+        if (remoteControlling) {
+            // Like Spotify: what you pick plays on the device that is playing.
+            val shuffled = shuffleMode(context) != ShuffleMode.OFF && index in list.indices
+            val ordered = if (shuffled) listOf(list[index]) + list.filterIndexed { i, _ -> i != index }.shuffled() else list
+            sync.remote.send(RemoteCommand.queue(ordered, if (shuffled) 0 else index, context))
+            return
+        }
+        claimActive()
         queueContext = context
         radioIds.clear()
         queueOriginal = list
@@ -550,14 +589,16 @@ class Controller(
         if (shuffleMode(ctx) == ShuffleMode.OFF) shuffleModes[ctx] = ShuffleMode.ON
         playCollection(list, ctx)
     }
-    fun jumpTo(index: Int) { queue = queue.jump(index); startCurrent() }
+    fun jumpTo(index: Int) { if (remoteControlling) sync.remote.send(RemoteCommand.jump(index)) else { queue = queue.jump(index); startCurrent() } }
 
     fun addToQueue(song: SongItem) {
+        if (remoteControlling) { sync.remote.send(RemoteCommand.song("add", song)); showToast("Added to the queue on $playingOn"); return }
         val was = queue.items.isEmpty(); queue = queue.add(song)
         if (was) { queue = queue.jump(0); startCurrent() } else showToast("Added to queue")
     }
 
     fun playNext(song: SongItem) {
+        if (remoteControlling) { sync.remote.send(RemoteCommand.song("playnext", song)); showToast("Playing next on $playingOn"); return }
         queue = queue.playNext(song)
         if (queue.items.size == 1) { queue = queue.jump(0); startCurrent() } else { queue.upNext?.let { engine.prefetch(it.id) }; showToast("Playing next") }
     }
@@ -712,7 +753,117 @@ class Controller(
         }
     }
 
-    fun cycleRepeat() { queue = queue.copy(repeat = RepeatMode.entries[(queue.repeat.ordinal + 1) % RepeatMode.entries.size]) }
+    fun cycleRepeat() { if (remoteControlling) sync.remote.send(RemoteCommand.simple("repeat")) else localCycleRepeat() }
+    private fun localCycleRepeat() { queue = queue.copy(repeat = RepeatMode.entries[(queue.repeat.ordinal + 1) % RepeatMode.entries.size]); sync.remote.localChanged() }
+
+    // ---------------- remote control and handoff (like Spotify Connect) ----------------
+
+    private var lastPlayedAt = 0L
+    private var pendingSeekMs = 0L
+    private var pendingPause = false
+
+    /** The paired device's playback while it is connected. */
+    val remoteDevice: RemoteState? get() = sync.remote.other?.takeIf { sync.remote.connected }
+
+    private fun localIdleMs(): Long = when {
+        playback.playing -> 0
+        lastPlayedAt == 0L -> Long.MAX_VALUE / 4
+        else -> System.currentTimeMillis() - lastPlayedAt
+    }
+
+    /**
+     * True while the other device is the active one (playing, or played more recently than this one in the last
+     * 10 minutes): the player shows it, and the buttons and song picks control it.
+     */
+    val remoteControlling: Boolean
+        get() {
+            val o = remoteDevice ?: return false
+            if (o.current == null || playback.playing) return false
+            return o.playing || o.idleNow() < minOf(localIdleMs(), 10 * 60_000L)
+        }
+
+    /** "Redmi Note 8" while controlling it ("Playing on …"). */
+    val playingOn: String? get() = if (remoteControlling) remoteDevice?.name else null
+
+    // What the player shows: this device, or the other one while controlling it.
+    val nowQueue: QueueState
+        get() = remoteDevice?.takeIf { remoteControlling }?.let { o ->
+            QueueState(o.items, o.index, runCatching { RepeatMode.valueOf(o.repeat) }.getOrDefault(RepeatMode.OFF))
+        } ?: queue
+    val nowPlayback: PlayerState
+        get() = remoteDevice?.takeIf { remoteControlling }?.let { PlayerState(loading = it.loading, playing = it.playing, durationMs = it.durationMs) } ?: playback
+    val nowPositionMs: Long get() = if (remoteControlling) sync.remote.otherPositionMs else positionMs
+    val nowVolume: Float get() = remoteDevice?.takeIf { remoteControlling }?.volume ?: volume
+
+    /** Only one device plays at a time: starting here pauses the other one. */
+    private fun claimActive() {
+        if (remoteDevice?.playing == true) sync.remote.send(RemoteCommand.simple("pause"))
+    }
+
+    /** Moves what this device plays (queue, song, position) to the other device. */
+    fun playOnOtherDevice() {
+        val o = remoteDevice ?: return
+        if (queue.current == null) return
+        sync.remote.send(RemoteCommand.queue(queue.items, queue.index, queueContext, positionMs, playing = true, repeat = queue.repeat.name))
+        if (playback.playing) engine.togglePause()
+        showToast("Playing on ${o.name}")
+    }
+
+    /** Takes over what the other device plays and continues here. */
+    fun playHere() {
+        val o = remoteDevice ?: return
+        if (o.current == null) return
+        startQueue(o.items, o.index, o.context.ifEmpty { "remote" }, o.positionNow(), playing = true, repeat = o.repeat)
+        sync.remote.send(RemoteCommand.simple("pause"))
+    }
+
+    private fun startQueue(items: List<SongItem>, index: Int, context: String, positionMs: Long, playing: Boolean, repeat: String) {
+        if (index !in items.indices) return
+        queueContext = context
+        radioIds.clear()
+        queueOriginal = items
+        queue = QueueState(items, index, runCatching { RepeatMode.valueOf(repeat) }.getOrDefault(RepeatMode.OFF))
+        pendingSeekMs = positionMs.coerceAtLeast(0)
+        pendingPause = !playing
+        startCurrent()
+    }
+
+    override fun remoteSnapshot(): RemoteState {
+        // A long queue is cut to the part around the current song.
+        val from = (queue.index - 50).coerceAtLeast(0)
+        val items = queue.items.drop(from).take(250)
+        return RemoteState(
+            deviceId = sync.myId, name = AppHooks.deviceName(), items = items, index = queue.index - from, repeat = queue.repeat.name,
+            playing = playback.playing, loading = playback.loading, positionMs = positionMs, durationMs = playback.durationMs,
+            volume = volume, idleMs = localIdleMs(), context = queueContext,
+        )
+    }
+
+    /** A command from the other device; it runs here and is never sent on. */
+    override fun runRemote(command: kotlinx.serialization.json.JsonObject) {
+        fun str(k: String) = (command[k] as? kotlinx.serialization.json.JsonPrimitive)?.content
+        when (str("t")) {
+            "toggle" -> if (queue.current != null) engine.togglePause()
+            "play" -> if (!playback.playing && queue.current != null) engine.togglePause()
+            "pause" -> if (playback.playing) engine.togglePause()
+            "next" -> localSkipNext(false)
+            "prev" -> localSkipPrevious()
+            "seek" -> str("ms")?.toLongOrNull()?.let { localSeek(it) }
+            "volume" -> str("v")?.toFloatOrNull()?.let { localVolume(it.coerceIn(0f, 1f)) }
+            "jump" -> str("index")?.toIntOrNull()?.takeIf { it in queue.items.indices }?.let { queue = queue.jump(it); startCurrent() }
+            "repeat" -> localCycleRepeat()
+            "add", "playnext" -> RemoteCommand.song(command)?.let { song ->
+                val was = queue.items.isEmpty()
+                queue = if (str("t") == "add") queue.add(song) else queue.playNext(song)
+                if (was) { queue = queue.jump(0); startCurrent() }
+            }
+            "queue" -> startQueue(
+                RemoteCommand.items(command), str("index")?.toIntOrNull() ?: 0, str("context") ?: "remote",
+                str("pos")?.toLongOrNull() ?: 0, str("playing") != "false", str("repeat") ?: "OFF",
+            )
+        }
+        sync.remote.localChanged()
+    }
 
     // ---------------- home feed ----------------
 
