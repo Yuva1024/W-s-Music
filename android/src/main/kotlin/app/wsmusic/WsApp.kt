@@ -39,6 +39,8 @@ class WsApp : Application() {
         AppHooks.backgroundDelayMs = 6_000
         AppHooks.dominantColor = { url -> Artwork.dominant(url) }
         AppHooks.updates = AndroidUpdater(this)
+        AppHooks.downloadsDir = File(filesDir, "downloads")
+        AppHooks.localMusic = AndroidLocalMusic(this)
         AppHooks.deviceName = { android.os.Build.MODEL?.takeIf { it.isNotBlank() } ?: "Phone" }
 
         val db = LibraryDatabase.configure(Room.databaseBuilder(this, LibraryDatabase::class.java, getDatabasePath("library.db").absolutePath))

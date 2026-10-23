@@ -65,6 +65,10 @@ sealed interface Route {
     data object Picker : Route
     /** An online playlist / album / mood page; its content lives in [Controller.details] under [key]. */
     data class Online(val key: String) : Route
+    /** Songs saved for offline listening. */
+    data object Downloads : Route
+    /** Music files on this device. */
+    data object LocalFiles : Route
 }
 
 /** The "where it was played from" string stored with each play. */
@@ -79,6 +83,8 @@ fun routeContext(r: Route): String = when (r) {
     is Route.Online -> r.key
     is Route.Mix -> "mix:${r.id}"
     Route.Picker -> "picker"
+    Route.Downloads -> "downloads"
+    Route.LocalFiles -> "localfiles"
 }
 
 /** What the user asked us to avoid, as quick lookups (from the `feedback` table). */
@@ -303,6 +309,32 @@ class Controller(
     })
     var syncOpen by mutableStateOf(false)
 
+    /** Songs saved for offline listening. */
+    val downloads = Downloads(library, scope) { showToast(it) }
+
+    /** Music files on this device (null until looked for). */
+    var localSongs by mutableStateOf<List<SongItem>?>(null)
+    var localScanning by mutableStateOf(false)
+    var localError by mutableStateOf<String?>(null)
+    /** Set when the phone must ask for permission to read music; the screen asks, then calls [scanLocalMusic]. */
+    var localNeedsPermission by mutableStateOf(false)
+
+    /** Looks for music files on this device again. */
+    fun scanLocalMusic() {
+        val source = AppHooks.localMusic ?: run { localError = "Not available here"; return }
+        if (localScanning) return
+        localScanning = true; localError = null
+        scope.launch(Dispatchers.IO) {
+            runCatching { source.scan() }
+                .onSuccess { localSongs = it; localNeedsPermission = false }
+                .onFailure { e ->
+                    if (e is SecurityException) localNeedsPermission = true
+                    else localError = e.message ?: "Couldn't read the music on this device"
+                }
+            localScanning = false
+        }
+    }
+
     fun startSync() = sync.start()
     var mixes by mutableStateOf<List<GeneratedMix>>(emptyList())
     var mixesRefreshing by mutableStateOf(false)
@@ -376,6 +408,10 @@ class Controller(
         scope.launch { loadShelfStats() }
         scope.launch(Dispatchers.IO) { for (write in playLog) runCatching { write() } }
         sync.remote.player = this
+        downloads.start()
+        OfflineFiles.find = { id ->
+            if (OfflineFiles.isLocal(id)) java.nio.file.Path.of(id.removePrefix(OfflineFiles.LOCAL_PREFIX)) else downloads.fileFor(id)?.toPath()
+        }
         // Tell the other device when what plays here changes (not on every position tick).
         scope.launch {
             androidx.compose.runtime.snapshotFlow {
@@ -441,7 +477,7 @@ class Controller(
         positionMs = 0
         engine.play(song.id, queue.upNext?.id)
         sync.remote.localChanged()
-        if (queue.upNext == null && autoplay) extendWithRadio(song, thenPlayFirstNew = false, ended = ended)
+        if (queue.upNext == null && autoplay && !OfflineFiles.isLocal(song.id)) extendWithRadio(song, thenPlayFirstNew = false, ended = ended)
         loadSideEffects(song)
     }
 
@@ -485,7 +521,7 @@ class Controller(
         val reason = if (auto) EndReason.TRACK_DONE else EndReason.FWD_BUTTON
         when {
             ni != null -> { queue = queue.jump(ni); startCurrent(if (auto) StartReason.TRACK_DONE else StartReason.FWD_BUTTON, reason) }
-            autoplay && queue.current != null -> extendWithRadio(queue.current!!, thenPlayFirstNew = true, ended = reason)
+            autoplay && queue.current != null && !OfflineFiles.isLocal(queue.current!!.id) -> extendWithRadio(queue.current!!, thenPlayFirstNew = true, ended = reason)
             else -> { flushPlay(reason); engine.stop() }
         }
     }
@@ -803,8 +839,11 @@ class Controller(
     /** Moves what this device plays (queue, song, position) to the other device. */
     fun playOnOtherDevice() {
         val o = remoteDevice ?: return
-        if (queue.current == null) return
-        sync.remote.send(RemoteCommand.queue(queue.items, queue.index, queueContext, positionMs, playing = true, repeat = queue.repeat.name))
+        val current = queue.current ?: return
+        if (OfflineFiles.isLocal(current.id)) { showToast("This song's file is only on this device, so it can't play on ${o.name}"); return }
+        // Files that are only on this device can't play there; the rest of the queue goes.
+        val items = queue.items.filter { !OfflineFiles.isLocal(it.id) }
+        sync.remote.send(RemoteCommand.queue(items, items.indexOfFirst { it.id == current.id }, queueContext, positionMs, playing = true, repeat = queue.repeat.name))
         if (playback.playing) engine.togglePause()
         showToast("Playing on ${o.name}")
     }

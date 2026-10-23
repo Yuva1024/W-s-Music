@@ -26,6 +26,8 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistAdd
+import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Block
@@ -116,6 +118,7 @@ fun CollectionPage(
                         val context = routeContext(c.route)
                         val mode = c.shuffleMode(context)
                         ShuffleButton(mode, shuffleActionLabel(mode, c.smartAvailable(context)), { c.cycleShuffle(context) }, size = 40.dp, iconSize = 28.dp, enabled = songs.isNotEmpty())
+                        if (c.route != Route.Downloads && c.route != Route.LocalFiles) DownloadAllButton(c, songs)
                         if (mode == ShuffleMode.SMART) MetaText(if (c.smartLoading) "Finding recommendations" else "Smart Shuffle: recommendations mixed in")
                         actions()
                     }
@@ -274,6 +277,10 @@ fun SongMenuItems(c: Controller, song: SongItem, context: String, close: () -> U
         MenuItem("Play next", Icons.Rounded.PlayArrow) { c.playNext(song); close() }
         MenuItem("Add to queue", Icons.Rounded.QueueMusic) { c.addToQueue(song); close() }
         MenuItem("Add to playlist", Icons.Rounded.PlaylistAdd) { inPlaylists = true }
+        if (!OfflineFiles.isLocal(song.id)) {
+            if (c.downloads.isDownloaded(song.id)) MenuItem("Remove download", Icons.Rounded.DownloadDone) { c.downloads.remove(song); close() }
+            else if (song.id !in c.downloads.active) MenuItem("Download", Icons.Rounded.Download) { c.downloads.download(listOf(song)); close() }
+        }
         if (queueIndex != null && queueIndex != c.queue.index) MenuItem("Remove from queue", Icons.Rounded.Close) { c.removeFromQueue(queueIndex); close() }
         HorizontalDivider(Modifier.padding(vertical = 4.dp), color = Ws.border)
         FeedbackItems(c, song, context, close)

@@ -143,6 +143,7 @@ class SyncStore(private val library: LibraryRepository) {
         val liked = dao.likedIdsNow().toSet()
         val songs = library.songsById(liked + likeLog.keys.map { it.removePrefix("like:") })
         for (id in liked) {
+            if (echopc.OfflineFiles.isLocal(id)) continue // a file on this device only
             if (likeLog["like:$id"]?.b("liked") == true) continue
             val song = songs[id] ?: continue
             val at = dao.getSong(id)?.likedDate?.millis() ?: now
@@ -168,7 +169,7 @@ class SyncStore(private val library: LibraryRepository) {
 
         // Songs in those playlists
         val plsLog = latest(OpType.PLAYLIST_SONG)
-        val maps = dao.localPlaylistSongMaps()
+        val maps = dao.localPlaylistSongMaps().filter { !echopc.OfflineFiles.isLocal(it.songId) }
         val present = maps.map { "pls:${it.playlistId}:${it.songId}" }.toSet()
         val mapSongs = library.songsById(maps.map { it.songId })
         for (m in maps) {
@@ -225,7 +226,7 @@ class SyncStore(private val library: LibraryRepository) {
             if (rows.isEmpty()) break
             val songs = library.songsById(rows.map { it.songId })
             for (r in rows) {
-                val song = songs[r.songId] ?: continue
+                val song = songs[r.songId]?.takeIf { !echopc.OfflineFiles.isLocal(it.id) } ?: continue
                 val id = "sig:${r.songId}:${r.timestamp.millis()}"
                 record(OpType.SIGNAL, id, r.timestamp.millis(), buildJsonObject {
                     put("song", song.toJson()); put("artistKey", r.artistKey); put("artistName", r.artistName)
@@ -244,7 +245,7 @@ class SyncStore(private val library: LibraryRepository) {
             if (rows.isEmpty()) break
             val songs = library.songsById(rows.map { it.songId })
             for (r in rows) {
-                val song = songs[r.songId] ?: continue
+                val song = songs[r.songId]?.takeIf { !echopc.OfflineFiles.isLocal(it.id) } ?: continue
                 val id = "play:${r.songId}:${r.timestamp.millis()}"
                 record(OpType.PLAY, id, r.timestamp.millis(), buildJsonObject { put("song", song.toJson()); put("playTime", r.playTime) }, fixedId = id)
             }

@@ -263,6 +263,8 @@ fun LibraryScreen(c: Controller) {
         item { LibraryRow("Liked Songs", "Playlist • ${liked.size} songs", null, Icons.Filled.Favorite) { c.navigate(Route.Liked) } }
         item { LibraryRow("Recently played", "Your listening history", null, WsIcons.History) { c.navigate(Route.History) } }
         item { LibraryRow("Your songs", "Liked and imported songs", null, WsIcons.Library) { c.navigate(Route.LibrarySongs) } }
+        item { LibraryRow("Downloads", "Offline • ${c.downloads.downloadedIds.size} songs" + if (c.downloads.active.isNotEmpty()) " • ${c.downloads.active.size} downloading" else "", null, WsIcons.DownloadDone) { c.navigate(Route.Downloads) } }
+        item { LibraryRow("On this phone", "Music files on your phone", null, WsIcons.Folder) { c.navigate(Route.LocalFiles) } }
         if (c.mixes.isNotEmpty()) itemsIndexed(c.mixes) { _, mix ->
             val songs = remember(mix.id, mix.songs) { c.mixSongs(mix) }
             LibraryRow(mix.title, "Made for you • ${songs.size} songs", songs.firstOrNull()?.thumbnail, null) { c.navigate(Route.Mix(mix.id)) }
@@ -317,6 +319,7 @@ fun CollectionPage(c: Controller, kind: String, title: String, subtitle: String,
             }
             if (songs.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton({ c.playShuffled(songs) }) { Icon(WsIcons.Shuffle, null, tint = Ws.text); Text("  Shuffle", color = Ws.text) }
+                if (c.route != Route.Downloads && c.route != Route.LocalFiles) DownloadAll(c, songs)
                 Spacer(Modifier.weight(1f))
                 Box(Modifier.size(56.dp).clip(RoundedCornerShape(50)).background(c.accent.primary).clickable { c.playCollection(songs) }, contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.PlayArrow, "Play", tint = c.accent.onPrimary, modifier = Modifier.size(32.dp))
@@ -413,4 +416,46 @@ fun PickerScreen(c: Controller) {
             Button({ c.savePicks() }, enabled = c.pickerSelected.isNotEmpty(), colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black)) { Text("Done") }
         }
     }
+}
+
+// ============================================================================ Offline
+
+/** Download button on playlist, album and mix pages. */
+@Composable
+private fun DownloadAll(c: Controller, songs: List<SongItem>) {
+    val online = songs.filter { !echopc.OfflineFiles.isLocal(it.id) }
+    if (online.isEmpty()) return
+    val done = online.count { c.downloads.isDownloaded(it.id) }
+    val busy = online.any { it.id in c.downloads.active }
+    IconButton({ if (!busy && done < online.size) { c.downloads.download(online); c.showToast("Downloading ${online.size - done} songs") } }) {
+        Icon(
+            if (done == online.size) WsIcons.DownloadDone else WsIcons.Download,
+            when { busy -> "Downloading"; done == online.size -> "Downloaded"; else -> "Download" },
+            tint = if (busy || done == online.size) c.accent.highlight else Ws.text,
+        )
+    }
+}
+
+@Composable
+fun DownloadsScreen(c: Controller) {
+    val songs = c.downloads.downloadedSongs
+    val waiting = c.downloads.active.size
+    CollectionPage(
+        c, "Offline", "Downloads", "${songs.size} songs" + if (waiting > 0) " • $waiting downloading" else "", null, songs,
+        "Songs you download play without internet. Tap the download button on a playlist, or Download in a song's ⋮ menu.",
+    )
+}
+
+@Composable
+fun LocalFilesScreen(c: Controller) {
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) c.scanLocalMusic() else c.localError = "W's MUSIC needs permission to read the music on this phone."
+    }
+    LaunchedEffect(Unit) { c.scanLocalMusic() } // quick: Android keeps the list; new songs show up each time
+    LaunchedEffect(c.localNeedsPermission) { if (c.localNeedsPermission) ask.launch(app.wsmusic.AndroidLocalMusic.permission) }
+    CollectionPage(
+        c, "On this phone", "Local files",
+        if (c.localScanning) "Looking for music…" else "${c.localSongs.orEmpty().size} songs", null, c.localSongs.orEmpty(),
+        c.localError ?: if (c.localScanning) "Looking for music…" else "No music files found on this phone.",
+    )
 }

@@ -88,6 +88,8 @@ fun PhoneApp(c: Controller) {
                     is Route.Mix -> MixScreen(c, r.id)
                     is Route.Online -> OnlineScreen(c, r.key)
                     Route.Picker -> PickerScreen(c)
+                    Route.Downloads -> DownloadsScreen(c)
+                    Route.LocalFiles -> LocalFilesScreen(c)
                     Route.Lyrics -> { nowPlaying = true; c.goBack() }
                 }
             }

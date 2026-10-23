@@ -155,6 +155,8 @@ private fun MainView(c: Controller, modifier: Modifier) {
             is Route.Online -> OnlinePage(c, c.details[r.key])
             is Route.Mix -> MixPage(c, r.id)
             Route.Picker -> TastePickerPage(c)
+            Route.Downloads -> DownloadsPage(c)
+            Route.LocalFiles -> LocalFilesPage(c) { pickMusicFolder()?.let { DesktopLocalMusic.addFolder(it); c.scanLocalMusic() } }
         }
     }
 }

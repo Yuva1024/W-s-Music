@@ -17,6 +17,7 @@ dependencies {
     implementation(project(":betterlyrics"))
     implementation(project(":simpmusic"))
     implementation(project(":youlyplus"))
+    implementation("net.jthink:jaudiotagger:3.0.1") // titles, artists and cover art of music files on this PC
     implementation("com.atilika.kuromoji:kuromoji-ipadic:0.9.0")
     implementation("com.github.promeG:tinypinyin:2.0.3")
     implementation("com.github.MetrolistGroup.innertubex:innertubex:0.7.2")
@@ -37,7 +38,7 @@ dependencies {
 }
 
 // One place for the version: the installer, the Updater (version.properties) and the release tag must agree.
-val appVersion = "1.0.9"
+val appVersion = "1.1.0"
 
 tasks.processResources {
     inputs.property("appVersion", appVersion)

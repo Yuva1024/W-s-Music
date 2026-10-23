@@ -92,6 +92,8 @@ object WsIcons {
     val Download = icon("Download", "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z")
     val Sync = icon("Sync", "M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z")
     val Devices = icon("Devices", "M4 6h18V4H4c-1.1 0-2 .9-2 2v11H0v3h14v-3H4V6zm19 2h-6c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1zm-1 9h-4v-7h4v7z")
+    val DownloadDone = icon("DownloadDone", "M5 18h14v2H5v-2zm4.6-2.7L5 10.7l2-1.9 2.6 2.6L17 4l2 2-9.4 9.3z")
+    val Folder = icon("Folder", "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z")
     val History = icon("History", "M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z")
 }
 
@@ -145,6 +147,11 @@ fun SongMenu(c: Controller, song: SongItem, open: Boolean, onClose: () -> Unit) 
         DropdownMenuItem({ Text("Play next") }, { c.playNext(song); onClose() })
         DropdownMenuItem({ Text("Add to queue") }, { c.addToQueue(song); onClose() })
         DropdownMenuItem({ Text("Add to playlist…") }, { pickPlaylist = true; onClose() })
+        if (!echopc.OfflineFiles.isLocal(song.id)) when {
+            c.downloads.isDownloaded(song.id) -> DropdownMenuItem({ Text("Remove download") }, { c.downloads.remove(song); onClose() })
+            song.id in c.downloads.active -> DropdownMenuItem({ Text("Downloading…") }, {}, enabled = false)
+            else -> DropdownMenuItem({ Text("Download") }, { c.downloads.download(listOf(song)); onClose() })
+        }
         DropdownMenuItem({ Text("Go to song radio") }, { c.playMix(song); onClose() })
         DropdownMenuItem({ Text("Not interested") }, { c.notInterested(song); onClose() })
         DropdownMenuItem({ Text("Don't play this artist") }, { c.banArtist(song); onClose() })

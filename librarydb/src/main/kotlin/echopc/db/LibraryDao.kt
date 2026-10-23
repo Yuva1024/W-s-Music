@@ -43,6 +43,13 @@ abstract class LibraryDao {
     @Query("SELECT id FROM song WHERE liked")
     abstract fun likedIds(): Flow<List<String>>
 
+    @Transaction
+    @Query("SELECT * FROM song WHERE isDownloaded ORDER BY dateDownload DESC")
+    abstract fun downloadedSongs(): Flow<List<Song>>
+
+    @Query("UPDATE song SET isDownloaded = :downloaded, dateDownload = :at WHERE id = :id")
+    abstract suspend fun setDownloaded(id: String, downloaded: Boolean, at: LocalDateTime?)
+
     @Query("SELECT * FROM song WHERE id = :id")
     abstract suspend fun getSong(id: String): SongEntity?
 

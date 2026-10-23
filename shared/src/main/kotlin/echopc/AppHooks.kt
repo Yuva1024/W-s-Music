@@ -50,5 +50,15 @@ object AppHooks {
      * Starts the Wi-Fi sync listener (HTTP + discovery) for the given handler; the computer has one, the phone
      * doesn't (it connects to the computer). Closing the result stops listening.
      */
+    /** Folder for songs saved for offline listening; null where downloads aren't available. */
+    @Volatile var downloadsDir: java.io.File? = null
+    /** Finds music files on this device (the phone's music library, the computer's music folders). */
+    @Volatile var localMusic: LocalMusicSource? = null
     @Volatile var syncServer: ((echopc.sync.SyncManager.SyncHost) -> AutoCloseable)? = null
+}
+
+/** Music files on this device, as songs whose ids are "local:<path>" (see OfflineFiles). */
+interface LocalMusicSource {
+    /** Everything found, sorted by title. Throws [SecurityException] when the app may not read music yet. */
+    suspend fun scan(): List<SongItem>
 }

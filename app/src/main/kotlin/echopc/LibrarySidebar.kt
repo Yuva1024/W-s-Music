@@ -20,6 +20,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.History
+import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
@@ -60,11 +62,14 @@ fun LibrarySidebar(c: Controller, onPickAndroidFile: () -> Unit) {
     var alphabetical by remember { mutableStateOf(false) }
     val collapsed = c.sidebarCollapsed
 
-    val entries = remember(liked.size, librarySongs.size, playlists, filter, alphabetical) {
+    val downloadCount = c.downloads.downloadedIds.size
+    val entries = remember(liked.size, librarySongs.size, playlists, filter, alphabetical, downloadCount) {
         val pinned = listOf(
             LibraryEntry("liked", Route.Liked, "Liked Songs", "Playlist • ${liked.size} songs", null, Icons.Rounded.Favorite, null),
             LibraryEntry("songs", Route.LibrarySongs, "Your songs", "Collection • ${librarySongs.size} songs", null, Icons.Rounded.MusicNote, Ws.surfaceTop),
             LibraryEntry("history", Route.History, "Recently played", "History", null, Icons.Rounded.History, Ws.surfaceTop),
+            LibraryEntry("downloads", Route.Downloads, "Downloads", "Offline • ${downloadCount} songs", null, Icons.Rounded.DownloadDone, Ws.surfaceTop),
+            LibraryEntry("localfiles", Route.LocalFiles, "Local files", "Music on this PC", null, Icons.Rounded.Folder, Ws.surfaceTop),
         )
         val own = playlists.map { p ->
             LibraryEntry("pl-${p.playlist.id}", Route.LocalPlaylist(p.playlist.id), p.playlist.name, "Playlist • ${p.songCount} songs", p.thumbnails.firstOrNull(), null, null)

@@ -22,6 +22,16 @@ object StreamLog {
  * Downloads a track's audio into a temp file. Results are cached per videoId so the next song
  * can be fetched while the current one plays.
  */
+/**
+ * Songs that are already on this device: downloads, and local music files (ids "local:<path>"). The apps set
+ * [find]; the loader then plays the file instead of streaming.
+ */
+object OfflineFiles {
+    @Volatile var find: (String) -> Path? = { null }
+    fun isLocal(id: String) = id.startsWith(LOCAL_PREFIX)
+    const val LOCAL_PREFIX = "local:"
+}
+
 /** A download that failed after the stream was resolved; remembers which client served it so the retry can use another. */
 class StreamFailure(val client: String?, cause: Throwable) : Exception(cause.message ?: cause.toString(), cause)
 
@@ -36,8 +46,15 @@ class AudioLoader(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val cache = ConcurrentHashMap<String, Deferred<Path>>()
 
-    /** Starts (or reuses) the download for [videoId]. */
-    fun load(videoId: String): Deferred<Path> =
+    /** Starts (or reuses) the download for [videoId]; a downloaded or local song is its file, right away. */
+    fun load(videoId: String): Deferred<Path> {
+        runCatching { OfflineFiles.find(videoId) }.getOrNull()?.takeIf { Files.isRegularFile(it) }?.let { return kotlinx.coroutines.CompletableDeferred(it) }
+        if (OfflineFiles.isLocal(videoId)) return kotlinx.coroutines.CompletableDeferred<Path>().apply { completeExceptionally(java.io.FileNotFoundException("This song's file is no longer on this device")) }
+        return stream(videoId)
+    }
+
+    /** Always from YouTube Music (used to download a song for offline). */
+    fun stream(videoId: String): Deferred<Path> =
         cache.computeIfAbsent(videoId) {
             scope.async {
                 var lastError: Throwable? = null
@@ -73,6 +90,9 @@ class AudioLoader(
                 throw lastError!!
             }
         }
+
+    /** Forgets [videoId]'s temp file (after it was moved elsewhere, e.g. into downloads). */
+    fun release(videoId: String) { cache.remove(videoId) }
 
     /** One full attempt: resolve a fresh stream URL, then download it. */
     private suspend fun fetch(videoId: String, skip: Set<String>, allowSabr: Boolean): Path {

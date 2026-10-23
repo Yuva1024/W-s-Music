@@ -8,5 +8,7 @@ fun installDesktopHooks() {
     AppHooks.loadLyrics = { song -> LyricsRepository.load(song) }
     AppHooks.updates = Updater
     AppHooks.deviceName = ::desktopName
+    AppHooks.downloadsDir = java.io.File(System.getenv("APPDATA") ?: System.getProperty("user.home"), "WsMusic/downloads")
+    AppHooks.localMusic = DesktopLocalMusic
     AppHooks.syncServer = { host -> DesktopSyncServer(host) }
 }

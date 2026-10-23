@@ -53,6 +53,13 @@ class LibraryRepository(private val db: LibraryDatabase) {
 
     val likedSongs: Flow<List<Song>> = dao.likedSongs().map { it.withArtistOrder() }
     val likedIds: Flow<List<String>> = dao.likedIds()
+    /** Songs saved for offline listening, newest first. */
+    val downloadedSongs: Flow<List<Song>> = dao.downloadedSongs().map { it.withArtistOrder() }
+
+    suspend fun setDownloaded(item: SongItem, downloaded: Boolean) {
+        save(item)
+        dao.setDownloaded(item.id, downloaded, if (downloaded) LocalDateTime.now() else null)
+    }
     val librarySongs: Flow<List<Song>> = dao.librarySongs().map { it.withArtistOrder() }
     val playlists: Flow<List<Playlist>> = dao.playlists()
     fun history(limit: Int = 200): Flow<List<EventWithSong>> =
