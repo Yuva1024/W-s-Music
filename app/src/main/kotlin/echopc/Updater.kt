@@ -1,9 +1,5 @@
 package echopc
 
-import java.net.URI
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -84,8 +80,16 @@ object Updater : UpdateService {
         )
     }
 
-    private val http: HttpClient by lazy {
-        HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).connectTimeout(Duration.ofSeconds(10)).build()
+    /**
+     * OkHttp, not java.net.http: GitHub's download host has several addresses and some networks can't reach one of
+     * them. java.net.http only tries the first address (every try timed out when that one was unreachable);
+     * OkHttp moves on to the next.
+     */
+    private val http: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(Duration.ofSeconds(6)).readTimeout(Duration.ofSeconds(30))
+            .followRedirects(true).followSslRedirects(true).retryOnConnectionFailure(true)
+            .build()
     }
 
     /** Asks GitHub for the latest release of each repository; null if there is nothing newer (or no network). */
@@ -95,10 +99,9 @@ object Updater : UpdateService {
         val responses = HashMap<String, String>()
         for (repo in repos) {
             runCatching {
-                val request = HttpRequest.newBuilder(URI.create("https://api.github.com/repos/$repo/releases/latest"))
-                    .header("Accept", "application/vnd.github+json").header("User-Agent", "WsMusic-updater").timeout(Duration.ofSeconds(15)).build()
-                val response = http.send(request, HttpResponse.BodyHandlers.ofString())
-                if (response.statusCode() == 200) responses[repo] = response.body()
+                val request = okhttp3.Request.Builder().url("https://api.github.com/repos/$repo/releases/latest")
+                    .header("Accept", "application/vnd.github+json").header("User-Agent", "WsMusic-updater").build()
+                http.newCall(request).execute().use { response -> if (response.code == 200) responses[repo] = response.body.string() }
             }.onFailure { Device.log("Update check for $repo failed: ${it.message?.take(120)}") }
         }
         return choose(responses, current)
@@ -118,19 +121,36 @@ object Updater : UpdateService {
         val dir = Files.createTempDirectory("WsMusic-update-")
         val file = dir.resolve(info.assetName.replace(Regex("[^A-Za-z0-9._-]"), "_"))
         try {
-            val request = HttpRequest.newBuilder(URI.create(info.downloadUrl)).header("User-Agent", "WsMusic-updater").build()
-            val response = http.send(request, HttpResponse.BodyHandlers.ofInputStream())
-            check(response.statusCode() == 200) { "Download failed: HTTP ${response.statusCode()}" }
-            val total = response.headers().firstValueAsLong("Content-Length").orElse(info.sizeBytes).takeIf { it > 0 } ?: info.sizeBytes
+            // A dropped connection continues from where it stopped (up to 6 tries) instead of starting over.
             var done = 0L
-            response.body().use { input ->
-                Files.newOutputStream(file).use { out ->
-                    val buffer = ByteArray(128 * 1024)
-                    while (true) {
-                        val n = input.read(buffer); if (n < 0) break
-                        out.write(buffer, 0, n); done += n
-                        if (total > 0) onProgress((done.toFloat() / total).coerceIn(0f, 1f))
+            var total = info.sizeBytes
+            var attempt = 0
+            Files.newOutputStream(file).use { out ->
+                while (true) {
+                    val request = okhttp3.Request.Builder().url(info.downloadUrl).header("User-Agent", "WsMusic-updater")
+                        .apply { if (done > 0) header("Range", "bytes=$done-") }.build()
+                    val finished = runCatching {
+                        http.newCall(request).execute().use { response ->
+                            check(response.code == 200 || response.code == 206) { "Download failed: HTTP ${response.code}" }
+                            if (done > 0 && response.code == 200) error("The server can't continue the download") // would restart from 0
+                            if (total <= 0) total = done + (response.body.contentLength().takeIf { it > 0 } ?: 0)
+                            response.body.byteStream().use { input ->
+                                val buffer = ByteArray(128 * 1024)
+                                while (true) {
+                                    val n = input.read(buffer); if (n < 0) break
+                                    out.write(buffer, 0, n); done += n
+                                    if (total > 0) onProgress((done.toFloat() / total).coerceIn(0f, 1f))
+                                }
+                            }
+                        }
+                        total <= 0 || done >= total
                     }
+                    if (finished.getOrDefault(false)) break
+                    attempt++
+                    val error = finished.exceptionOrNull()
+                    Device.log("Update download stopped at $done of $total bytes (try $attempt): ${error?.message ?: "connection ended early"}")
+                    if (attempt >= 6 || error?.message?.startsWith("Download failed") == true) throw error ?: IllegalStateException("The download is incomplete")
+                    Thread.sleep(1000L * attempt)
                 }
             }
             if (info.sizeBytes > 0) check(Files.size(file) == info.sizeBytes) { "The download is incomplete" }

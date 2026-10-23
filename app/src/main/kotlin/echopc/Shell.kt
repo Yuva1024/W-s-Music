@@ -294,7 +294,7 @@ fun UpdateDialog(c: Controller) {
 internal fun UpdateDialogBody(c: Controller, info: UpdateInfo) {
     Column(Modifier.widthIn(min = 380.dp, max = 520.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Version ${info.version} is ready (you have ${Updater.currentVersion()}).", style = MaterialTheme.typography.bodyLarge, color = Ws.text)
-        if (info.notes.isNotBlank()) Text(info.notes.take(400), style = MaterialTheme.typography.bodyMedium, color = Ws.muted, maxLines = 8, overflow = TextOverflow.Ellipsis)
+        if (info.notes.isNotBlank()) Text(plainReleaseNotes(info.notes).take(700), style = MaterialTheme.typography.bodyMedium, color = Ws.muted, maxLines = 12, overflow = TextOverflow.Ellipsis)
         val silent = remember(info) { Updater.installsSilently(info) }
         Text(
             if (silent) "W's MUSIC downloads the update, closes for a few seconds while it installs, and reopens by itself. Your library, likes and settings are kept. From ${info.repo} on GitHub."
