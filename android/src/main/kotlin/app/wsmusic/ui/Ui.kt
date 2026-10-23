@@ -94,6 +94,8 @@ object WsIcons {
     val Devices = icon("Devices", "M4 6h18V4H4c-1.1 0-2 .9-2 2v11H0v3h14v-3H4V6zm19 2h-6c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h6c.55 0 1-.45 1-1V9c0-.55-.45-1-1-1zm-1 9h-4v-7h4v7z")
     val DownloadDone = icon("DownloadDone", "M5 18h14v2H5v-2zm4.6-2.7L5 10.7l2-1.9 2.6 2.6L17 4l2 2-9.4 9.3z")
     val Folder = icon("Folder", "M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z")
+    val DragHandle = icon("DragHandle", "M20 9H4v2h16V9zM4 15h16v-2H4v2z")
+    val Close = icon("Close", "M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z")
     val History = icon("History", "M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z")
 }
 
@@ -113,25 +115,31 @@ fun Art(url: String?, size: Dp, modifier: Modifier = Modifier, round: Boolean = 
 fun SongRow(c: Controller, song: SongItem, onClick: () -> Unit, index: Int? = null) {
     var menu by remember { mutableStateOf(false) }
     val current = c.queue.current?.id == song.id
-    Row(
-        Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { menu = true }).padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    // Swipe right: add to queue. Swipe left: play next.
+    Swipeable(
+        right = SwipeAction("Add to queue", WsIcons.Queue, Color(0xFF1DB954)) { c.addToQueue(song) },
+        left = SwipeAction("Play next", WsIcons.SkipNext, Color(0xFF3D5AFE)) { c.playNext(song) },
     ) {
-        if (index != null) Text("${index + 1}", Modifier.width(22.dp), color = Ws.muted, style = MaterialTheme.typography.bodyMedium)
-        Art(song.thumbnail, 48.dp)
-        Column(Modifier.weight(1f)) {
-            Text(song.title, color = if (current) c.accentHighlight() else Ws.text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (song.id in c.likedIds) Icon(Icons.Filled.Favorite, null, Modifier.size(12.dp), tint = c.accentHighlight())
-                Text(
-                    (if (song.isVideoSong) "Video • " else "") + song.artists.joinToString { it.name },
-                    color = Ws.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
-                )
+        Row(
+            Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = { menu = true }).padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (index != null) Text("${index + 1}", Modifier.width(22.dp), color = Ws.muted, style = MaterialTheme.typography.bodyMedium)
+            Art(song.thumbnail, 48.dp)
+            Column(Modifier.weight(1f)) {
+                Text(song.title, color = if (current) c.accentHighlight() else Ws.text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (song.id in c.likedIds) Icon(Icons.Filled.Favorite, null, Modifier.size(12.dp), tint = c.accentHighlight())
+                    Text(
+                        (if (song.isVideoSong) "Video • " else "") + song.artists.joinToString { it.name },
+                        color = Ws.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
-        }
-        Box {
-            IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More options", tint = Ws.muted) }
-            SongMenu(c, song, menu) { menu = false }
+            Box {
+                IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "More options", tint = Ws.muted) }
+                SongMenu(c, song, menu) { menu = false }
+            }
         }
     }
 }

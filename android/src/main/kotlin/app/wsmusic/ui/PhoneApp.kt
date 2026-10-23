@@ -178,6 +178,7 @@ private fun NowPlaying(c: Controller, onClose: () -> Unit) {
             if (devices) DevicesDialog(c) { devices = false }
         }
         if (song == null) { Message("Nothing is playing."); return@Column }
+        val reorder = remember { ReorderState() }
         LazyColumn(Modifier.weight(1f)) {
             item {
                 Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { Art(song.thumbnail, 300.dp, corner = 8.dp) }
@@ -214,8 +215,16 @@ private fun NowPlaying(c: Controller, onClose: () -> Unit) {
             }
             val items = c.nowQueue.items
             val start = c.nowQueue.index + 1
-            itemsIndexed(items.drop(start).take(50)) { i, s ->
-                SongRow(c, s, { c.jumpTo(start + i) })
+            // Up next: drag the grip to reorder, swipe left to remove.
+            val shown = items.drop(start).take(100)
+            val last = start + shown.lastIndex
+            itemsIndexed(shown, key = { i, s -> "next-${start + i}-${s.id}" }) { i, s ->
+                val at = start + i
+                Box(reorder.row(at, start, last)) {
+                    Swipeable(right = null, left = SwipeAction("Remove", WsIcons.Close, Color(0xFFD32F2F)) { c.removeFromQueue(at) }) {
+                        QueueItem(s, { c.jumpTo(at) }, reorder.handle(at, start, last) { from, to -> c.moveInQueue(from, to) })
+                    }
+                }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -261,4 +270,20 @@ private fun UpdateDialog(c: Controller) {
         confirmButton = { TextButton({ c.installUpdate() }, enabled = !busy) { Text(if (c.updateError != null) "Try again" else "Update now") } },
         dismissButton = { TextButton({ c.updateDialogOpen = false }, enabled = !busy) { Text("Not now") } },
     )
+}
+
+/** A song in "Up next", with a grip to drag it to another place. */
+@Composable
+private fun QueueItem(song: com.music.innertube.models.SongItem, onClick: () -> Unit, grip: Modifier) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 16.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Art(song.thumbnail, 44.dp)
+        Column(Modifier.weight(1f)) {
+            Text(song.title, color = Ws.text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            Text(song.artists.joinToString { it.name }, color = Ws.muted, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+        }
+        Box(grip.size(48.dp), contentAlignment = Alignment.Center) { Icon(WsIcons.DragHandle, "Drag to reorder", tint = Ws.muted) }
+    }
 }

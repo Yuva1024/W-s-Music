@@ -40,6 +40,7 @@ import echopc.sync.RemoteCommand
 import echopc.sync.RemotePlayer
 import echopc.sync.RemoteState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.serialization.json.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -51,6 +52,9 @@ import kotlinx.coroutines.runBlocking
 enum class SearchTab(val label: String) { All("All"), Songs("Songs"), Videos("Videos"), Albums("Albums"), Artists("Artists"), Playlists("Playlists") }
 
 /** A page of the main view. The controller keeps a back stack of these (top bar back/forward). */
+/** What happens to the music while someone talks in voice chat (Discord). */
+enum class VoiceDuck { OFF, LOWER, PAUSE }
+
 sealed interface Route {
     data object Home : Route
     data object Search : Route
@@ -392,6 +396,16 @@ class Controller(
     private var lyricsJob: Job? = null
     private var toastJob: Job? = null
 
+    // Discord mode (declared before init, which reads the saved setting)
+    var voiceDuck by mutableStateOf(VoiceDuck.OFF); private set
+    /** Someone is talking in voice chat right now (while the mode is on). */
+    var voiceTalking by mutableStateOf(false); private set
+    val voiceDuckAvailable: Boolean get() = AppHooks.voiceMeter != null
+    private var voiceMeter: AutoCloseable? = null
+    @Volatile private var duckFactor = 1f
+    @Volatile private var pausedByVoice = false
+    @Volatile private var lastVoiceAt = 0L
+
     init {
         loadSettings()
         engine.setVolume(volume.toDouble())
@@ -408,6 +422,7 @@ class Controller(
         scope.launch { loadShelfStats() }
         scope.launch(Dispatchers.IO) { for (write in playLog) runCatching { write() } }
         sync.remote.player = this
+        applyVoiceMeter()
         downloads.start()
         OfflineFiles.find = { id ->
             if (OfflineFiles.isLocal(id)) java.nio.file.Path.of(id.removePrefix(OfflineFiles.LOCAL_PREFIX)) else downloads.fileFor(id)?.toPath()
@@ -539,6 +554,7 @@ class Controller(
     fun togglePause() {
         if (remoteControlling) { sync.remote.send(RemoteCommand.simple("toggle")); return }
         val resuming = !playback.playing
+        pausedByVoice = false // the person decided; voice chat doesn't resume it
         engine.togglePause()
         if (resuming) claimActive()
     }
@@ -588,7 +604,57 @@ class Controller(
     fun seek(ms: Long) { if (remoteControlling) sync.remote.send(RemoteCommand.seek(ms)) else localSeek(ms) }
     private fun localSeek(ms: Long) { positionMs = ms; engine.seek(ms); sync.remote.localChanged() }
     fun changeVolume(v: Float) { if (remoteControlling) sync.remote.send(RemoteCommand.volume(v)) else localVolume(v) }
-    private fun localVolume(v: Float) { volume = v; engine.setVolume(v.toDouble()); sync.remote.localChanged() }
+    private fun localVolume(v: Float) { volume = v; engine.setVolume((v * duckFactor).toDouble()); sync.remote.localChanged() }
+
+    // ---------------- Discord mode: quieter (or paused) while someone talks ----------------
+
+
+    fun changeVoiceDuck(mode: VoiceDuck) {
+        voiceDuck = mode
+        saveSettings()
+        applyVoiceMeter()
+        if (mode != VoiceDuck.OFF && !voiceDuckAvailable) showToast("This only works on the computer")
+    }
+
+    private fun applyVoiceMeter() {
+        if (voiceDuck == VoiceDuck.OFF) {
+            runCatching { voiceMeter?.close() }; voiceMeter = null
+            if (voiceTalking) endTalking()
+            setDuck(1f)
+        } else if (voiceMeter == null) {
+            voiceMeter = runCatching { AppHooks.voiceMeter?.invoke(::onVoiceLevel) }.getOrNull()
+        }
+    }
+
+    /** About 20 times a second, from the meter's thread. */
+    internal fun onVoiceLevel(level: Float) {
+        if (voiceDuck == VoiceDuck.OFF) return
+        val now = System.currentTimeMillis()
+        if (level > VOICE_THRESHOLD) {
+            lastVoiceAt = now
+            if (!voiceTalking) startTalking()
+        } else if (voiceTalking && now - lastVoiceAt > if (voiceDuck == VoiceDuck.PAUSE) 1500 else 800) {
+            endTalking()
+        }
+        // Down quickly, back up gently.
+        val target = if (voiceTalking && voiceDuck == VoiceDuck.LOWER) DUCKED_VOLUME else 1f
+        if (duckFactor != target) setDuck(if (target < duckFactor) maxOf(target, duckFactor - 0.4f) else minOf(target, duckFactor + 0.08f))
+    }
+
+    private fun setDuck(f: Float) { duckFactor = f; engine.setVolume((volume * f).toDouble()) }
+
+    private fun startTalking() {
+        voiceTalking = true
+        if (voiceDuck == VoiceDuck.PAUSE && playback.playing) { pausedByVoice = true; engine.togglePause() }
+    }
+
+    private fun endTalking() {
+        voiceTalking = false
+        if (pausedByVoice) {
+            pausedByVoice = false
+            if (!playback.playing && queue.current != null) engine.togglePause()
+        }
+    }
 
     /** Plays [list] from [index]; the page it was started from becomes the play context. */
     fun playFromList(list: List<SongItem>, index: Int, context: String = routeContext(route)) {
@@ -639,7 +705,18 @@ class Controller(
         if (queue.items.size == 1) { queue = queue.jump(0); startCurrent() } else { queue.upNext?.let { engine.prefetch(it.id) }; showToast("Playing next") }
     }
 
-    fun removeFromQueue(position: Int) { queue = queue.remove(position) }
+    fun removeFromQueue(position: Int) {
+        if (remoteControlling) { sync.remote.send(kotlinx.serialization.json.buildJsonObject { put("t", "remove"); put("index", position) }); return }
+        queue = queue.remove(position); sync.remote.localChanged()
+    }
+
+    /** Drag to reorder: moves the song at [from] to [to] in the queue. */
+    fun moveInQueue(from: Int, to: Int) {
+        if (remoteControlling) { sync.remote.send(kotlinx.serialization.json.buildJsonObject { put("t", "move"); put("from", from); put("to", to) }); return }
+        queue = queue.move(from, to)
+        queue.upNext?.let { engine.prefetch(it.id) }
+        sync.remote.localChanged()
+    }
     fun shuffleQueue() { queue = queue.shuffledUpcoming(); queue.upNext?.let { engine.prefetch(it.id) } }
     fun clearQueue() {
         flushPlay(EndReason.CLOSED); engine.stop(); queue = QueueState(); lyrics = LyricsUiState.Idle
@@ -891,6 +968,8 @@ class Controller(
             "volume" -> str("v")?.toFloatOrNull()?.let { localVolume(it.coerceIn(0f, 1f)) }
             "jump" -> str("index")?.toIntOrNull()?.takeIf { it in queue.items.indices }?.let { queue = queue.jump(it); startCurrent() }
             "repeat" -> localCycleRepeat()
+            "move" -> { val from = str("from")?.toIntOrNull(); val to = str("to")?.toIntOrNull(); if (from != null && to != null) { queue = queue.move(from, to); queue.upNext?.let { engine.prefetch(it.id) } } }
+            "remove" -> str("index")?.toIntOrNull()?.takeIf { it != queue.index }?.let { queue = queue.remove(it) }
             "add", "playnext" -> RemoteCommand.song(command)?.let { song ->
                 val was = queue.items.isEmpty()
                 queue = if (str("t") == "add") queue.add(song) else queue.playNext(song)
@@ -1461,6 +1540,7 @@ class Controller(
     /** Saves the last listen and settings; called when the window closes. */
     fun shutdown() {
         sync.stop()
+        runCatching { voiceMeter?.close() }
         val song = playingSong; val ms = playedMax
         val duration = playback.durationMs.takeIf { it > 0 } ?: ((song?.duration ?: 0) * 1000L)
         if (song != null) runBlocking {
@@ -1478,6 +1558,7 @@ class Controller(
             val p = Properties().apply { f.inputStream().use(::load) }
             p.getProperty("volume")?.toFloatOrNull()?.let { volume = it.coerceIn(0f, 1f) }
             p.getProperty("autoplay")?.let { autoplay = it.toBoolean() }
+            p.getProperty("voiceDuck")?.let { v -> voiceDuck = VoiceDuck.entries.firstOrNull { it.name == v } ?: VoiceDuck.OFF }
             p.getProperty("panelOpen")?.let { panelOpen = it.toBoolean() }
             p.getProperty("repeat")?.let { r -> RepeatMode.entries.firstOrNull { it.name == r }?.let { queue = queue.copy(repeat = it) } }
             p.getProperty("panelTab")?.let { t -> PanelTab.entries.firstOrNull { it.name == t }?.let { panelTab = it } }
@@ -1496,6 +1577,7 @@ class Controller(
             f.parentFile?.mkdirs()
             Properties().apply {
                 setProperty("volume", volume.toString()); setProperty("autoplay", autoplay.toString())
+                setProperty("voiceDuck", voiceDuck.name)
                 setProperty("panelOpen", panelOpen.toString()); setProperty("repeat", queue.repeat.name)
                 setProperty("panelTab", panelTab.name)
                 setProperty("sidebarWidth", sidebarWidth.toString()); setProperty("sidebarCollapsed", sidebarCollapsed.toString())
@@ -1505,3 +1587,8 @@ class Controller(
         }
     }
 }
+
+/** Discord's sound above this (peak, 0..1) means someone is talking; silence there is exactly 0. */
+private const val VOICE_THRESHOLD = 0.01f
+/** Music volume while someone talks, in "lower" mode. */
+private const val DUCKED_VOLUME = 0.2f

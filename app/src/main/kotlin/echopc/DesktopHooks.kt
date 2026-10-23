@@ -10,5 +10,6 @@ fun installDesktopHooks() {
     AppHooks.deviceName = ::desktopName
     AppHooks.downloadsDir = java.io.File(System.getenv("APPDATA") ?: System.getProperty("user.home"), "WsMusic/downloads")
     AppHooks.localMusic = DesktopLocalMusic
+    AppHooks.voiceMeter = { onLevel -> VoiceMeter(onLevel = onLevel) }
     AppHooks.syncServer = { host -> DesktopSyncServer(host) }
 }

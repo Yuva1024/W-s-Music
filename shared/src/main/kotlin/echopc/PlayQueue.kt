@@ -53,6 +53,20 @@ data class QueueState(
         return copy(items = newItems, index = newIndex.coerceAtMost(newItems.lastIndex))
     }
 
+    /** Moves the song at [from] to [to] (drag to reorder); the playing song keeps playing. */
+    fun move(from: Int, to: Int): QueueState {
+        if (from !in items.indices || to !in items.indices || from == to) return this
+        val list = items.toMutableList()
+        list.add(to, list.removeAt(from))
+        val newIndex = when {
+            from == index -> to
+            from < index && to >= index -> index - 1
+            from > index && to <= index -> index + 1
+            else -> index
+        }
+        return copy(items = list, index = newIndex)
+    }
+
     fun jump(position: Int): QueueState = if (position in items.indices) copy(index = position) else this
 
     /** Index after finishing/skipping forward, or null when the queue is exhausted. */

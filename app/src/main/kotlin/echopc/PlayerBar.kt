@@ -108,6 +108,7 @@ fun PlayerBar(c: Controller) {
             WsIconButton(Icons.Rounded.ViewSidebar, "Now playing view", { c.togglePanel(PanelTab.NOW_PLAYING) }, size = 32.dp, iconSize = 18.dp, tint = tintFor(c.panelOpen && c.panelTab == PanelTab.NOW_PLAYING))
             WsIconButton(Icons.Rounded.Lyrics, "Lyrics", { c.toggleLyrics() }, size = 32.dp, iconSize = 18.dp, tint = tintFor(c.route == Route.Lyrics), enabled = has)
             WsIconButton(Icons.Rounded.QueueMusic, "Queue", { c.togglePanel(PanelTab.QUEUE) }, size = 32.dp, iconSize = 18.dp, tint = tintFor(c.panelOpen && c.panelTab == PanelTab.QUEUE))
+            VoiceDuckButton(c)
             DevicesButton(c)
             val volIcon = when { c.nowVolume == 0f -> Icons.Rounded.VolumeOff; c.nowVolume < 0.5f -> Icons.Rounded.VolumeDown; else -> Icons.Rounded.VolumeUp }
             WsIconButton(volIcon, if (c.nowVolume == 0f) "Unmute" else "Mute", { c.toggleMute() }, size = 32.dp, iconSize = 18.dp, shortcut = Shortcut.MUTE.keys)

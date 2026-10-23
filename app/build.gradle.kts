@@ -28,7 +28,7 @@ dependencies {
     implementation(compose.material3)
     implementation("org.jetbrains.compose.material:material-icons-extended:1.7.3")
     implementation("com.tianscar.javasound:jaad:0.9.4") // pure-Java AAC decoder for the compatible audio engine
-    implementation("net.java.dev.jna:jna-platform:5.14.0") // dark Windows title bar
+    implementation("net.java.dev.jna:jna-platform:5.14.0") // dark Windows title bar; audio meters for Discord mode
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.10.2")
     // JavaFX Media for audio playback (AAC/m4a), no external player needed
     val fx = "21.0.5"
@@ -38,7 +38,7 @@ dependencies {
 }
 
 // One place for the version: the installer, the Updater (version.properties) and the release tag must agree.
-val appVersion = "1.1.0"
+val appVersion = "1.2.0"
 
 tasks.processResources {
     inputs.property("appVersion", appVersion)

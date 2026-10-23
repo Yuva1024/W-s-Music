@@ -17,6 +17,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Devices
+import androidx.compose.material.icons.rounded.HeadsetMic
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -166,4 +167,43 @@ private fun DeviceRow(c: Controller, name: String, detail: String, selected: Boo
         },
         onClick = onClick,
     )
+}
+
+/**
+ * Discord mode: lower or pause the music only while someone is talking in Discord (you can stay in the call).
+ * Click to choose; lit while on, brighter while someone talks.
+ */
+@Composable
+fun VoiceDuckButton(c: Controller) {
+    var open by remember { mutableStateOf(false) }
+    val on = c.voiceDuck != VoiceDuck.OFF
+    androidx.compose.foundation.layout.Box {
+        WsIconButton(
+            Icons.Rounded.HeadsetMic,
+            when (c.voiceDuck) {
+                VoiceDuck.OFF -> "Discord mode: off"
+                VoiceDuck.LOWER -> if (c.voiceTalking) "Discord mode: someone is talking, music lowered" else "Discord mode: lowers the music while someone talks"
+                VoiceDuck.PAUSE -> if (c.voiceTalking) "Discord mode: someone is talking, music paused" else "Discord mode: pauses the music while someone talks"
+            },
+            { open = true }, size = 32.dp, iconSize = 18.dp,
+            tint = when { on && c.voiceTalking -> Ws.text; on -> c.accent.highlight; else -> Ws.muted },
+        )
+        androidx.compose.material3.DropdownMenu(open, { open = false }, containerColor = Ws.surfaceTop) {
+            Text("Discord mode", Modifier.padding(horizontal = 16.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, color = Ws.muted)
+            Text(
+                "Only while someone talks in Discord. You stay in the call; your own voice doesn't count.",
+                Modifier.padding(horizontal = 16.dp).width(260.dp), style = MaterialTheme.typography.bodySmall, color = Ws.muted,
+            )
+            listOf(
+                VoiceDuck.OFF to "Off",
+                VoiceDuck.LOWER to "Lower the music",
+                VoiceDuck.PAUSE to "Pause the music",
+            ).forEach { (mode, label) ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(label, color = if (c.voiceDuck == mode) c.accent.highlight else Ws.text) },
+                    onClick = { c.changeVoiceDuck(mode); open = false },
+                )
+            }
+        }
+    }
 }

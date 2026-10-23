@@ -1,5 +1,7 @@
 package echopc
 
+import androidx.compose.ui.input.pointer.pointerHoverIcon
+import androidx.compose.material.icons.rounded.DragIndicator
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -202,6 +204,8 @@ private fun QueueView(c: Controller) {
             return@Column
         }
         val upcoming = q.items.withIndex().drop(q.index + 1)
+        val reorder = remember { ReorderState() }
+        val first = q.index + 1; val last = q.items.lastIndex
         LazyColumn(Modifier.weight(1f), state = listState, contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 12.dp)) {
             q.current?.let { now ->
                 item("now-title") { QueueSectionTitle("Now playing") }
@@ -215,7 +219,11 @@ private fun QueueView(c: Controller) {
                 }
             }
             if (c.smartLoading) item("smart-loading") { MetaText("Finding Smart Shuffle recommendations", Modifier.padding(start = 8.dp, bottom = 6.dp)) }
-            itemsIndexed(upcoming, key = { _, v -> "q-${v.index}-${v.value.id}" }) { _, v -> QueueRow(c, v.value, v.index, current = false) }
+            itemsIndexed(upcoming, key = { _, v -> "q-${v.index}-${v.value.id}" }) { _, v ->
+                Box(reorder.row(v.index, first, last)) {
+                    QueueRow(c, v.value, v.index, current = false, grip = reorder.handle(v.index, first, last) { from, to -> c.moveInQueue(from, to) })
+                }
+            }
         }
     }
 }
@@ -226,11 +234,16 @@ private fun QueueSectionTitle(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun QueueRow(c: Controller, song: SongItem, index: Int, current: Boolean) {
+private fun QueueRow(c: Controller, song: SongItem, index: Int, current: Boolean, grip: Modifier? = null) {
     val accent = LocalAccent.current
     val recommended = c.nowQueue.isRecommended(index)
     HoverRow({ c.jumpTo(index) }, menu = { close -> SongMenuItems(c, song, c.queueContext, close, queueIndex = index) }) { hovered ->
         Row(Modifier.padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Drag the grip to move the song in the queue.
+            if (grip != null) Icon(
+                Icons.Rounded.DragIndicator, "Drag to reorder", grip.size(20.dp).pointerHoverIcon(androidx.compose.ui.input.pointer.PointerIcon.Hand),
+                tint = if (hovered) Ws.muted else Ws.faint,
+            )
             Thumb(song.thumbnail, 44.dp, corner = 4.dp, seed = song.title)
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

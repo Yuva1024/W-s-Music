@@ -52,6 +52,11 @@ object AppHooks {
      */
     /** Folder for songs saved for offline listening; null where downloads aren't available. */
     @Volatile var downloadsDir: java.io.File? = null
+    /**
+     * Starts watching how loud voice chat (Discord) is; the callback gets its peak level (0..1) about 20 times a
+     * second. Closing the result stops it. Null where it isn't possible (the phone).
+     */
+    @Volatile var voiceMeter: ((onLevel: (Float) -> Unit) -> AutoCloseable)? = null
     /** Finds music files on this device (the phone's music library, the computer's music folders). */
     @Volatile var localMusic: LocalMusicSource? = null
     @Volatile var syncServer: ((echopc.sync.SyncManager.SyncHost) -> AutoCloseable)? = null
