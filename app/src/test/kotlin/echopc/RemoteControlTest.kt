@@ -60,11 +60,23 @@ class RemoteControlTest {
             phone.sync.confirmCode(); pc.sync.allowPair()
             until("connected both ways") { phone.sync.remote.connected && pc.sync.remote.connected }
 
+            // The bug from 1.2.0: the computer played and was paused; a song tapped on the phone must play on the phone.
+            pc.playFromList(listOf(song("p")), 0, "test")
+            until("computer playing") { pc.playback.playing }
+            pc.togglePause()
+            until("phone sees the computer paused on that song") { phone.remoteDevice?.let { it.current?.id == "p" && !it.playing } == true }
+            phone.playFromList(listOf(song("q")), 0, "test")
+            until("a paused computer doesn't take the phone's taps") { phoneEngine.playing == "q" && phone.playback.playing }
+            assertFalse(pc.playback.playing)
+            phone.togglePause()
+            until("phone paused") { !phone.playback.playing }
+            until("computer sees the phone paused") { pc.remoteDevice?.let { it.current?.id == "q" && !it.playing } == true }
+
             // The computer plays; the phone shows it and becomes its remote.
             pc.playFromList(listOf(song("a"), song("b"), song("c")), 0, "test")
             until("phone sees the computer playing") { phone.remoteControlling && phone.nowQueue.current?.id == "a" }
             assertEquals("Device", phone.playingOn)
-            assertEquals(null, phoneEngine.playing) // nothing plays on the phone itself
+            assertFalse(phone.playback.playing) // nothing plays on the phone itself
 
             phone.togglePause()
             until("pause from the phone") { !pc.playback.playing }
@@ -78,7 +90,7 @@ class RemoteControlTest {
             // A song picked on the phone plays on the computer.
             phone.playFromList(listOf(song("x"), song("y")), 1, "search")
             until("picked song plays on the computer") { pcEngine.playing == "y" }
-            assertEquals(null, phoneEngine.playing)
+            assertFalse(phone.playback.playing)
 
             // Handoff to the phone: same song, from where it was; the computer stops.
             phone.playHere()

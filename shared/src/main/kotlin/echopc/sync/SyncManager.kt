@@ -323,7 +323,8 @@ class SyncManager(
                 else -> SyncResponse(404, "{}".toByteArray())
             }
         }.getOrElse { e ->
-            AppHooks.log("Sync: ${path} failed: ${e.message}")
+            // A request still waiting when the listener stops (app closing) ends with a cancellation: not a failure.
+            if (e !is kotlinx.coroutines.CancellationException) AppHooks.log("Sync: ${path} failed: ${e.message}")
             SyncResponse(500, buildJsonObject { put("error", e.message ?: "error") }.toString().toByteArray())
         }
 

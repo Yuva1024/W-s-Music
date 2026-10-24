@@ -220,7 +220,7 @@ class RemoteLink(private val sync: SyncManager, private val scope: CoroutineScop
         val pc = sync.peers.firstOrNull { it.role == "pc" } ?: return
         stateJob?.cancel()
         stateJob = scope.launch(Dispatchers.IO) {
-            delay(250)
+            delay(100) // gathers a burst of changes (a new song: queue, loading, playing) into one message
             val state = player?.remoteSnapshot() ?: return@launch
             runCatching { sync.call(pc, "/remote/state", buildJsonObject { put("state", state.toJson()) }) }
         }

@@ -527,7 +527,7 @@ class Controller(
     }
 
     fun skipNext(auto: Boolean = false) {
-        if (!auto && remoteControlling) { sync.remote.send(RemoteCommand.simple("next")); return }
+        if (!auto && remoteControlling) { controlRemote(RemoteCommand.simple("next")); return }
         localSkipNext(auto)
     }
 
@@ -542,7 +542,7 @@ class Controller(
     }
 
     fun skipPrevious() {
-        if (remoteControlling) { sync.remote.send(RemoteCommand.simple("prev")); return }
+        if (remoteControlling) { controlRemote(RemoteCommand.simple("prev")); return }
         localSkipPrevious()
     }
 
@@ -552,7 +552,7 @@ class Controller(
     }
 
     fun togglePause() {
-        if (remoteControlling) { sync.remote.send(RemoteCommand.simple("toggle")); return }
+        if (remoteControlling) { controlRemote(RemoteCommand.simple("toggle")); return }
         val resuming = !playback.playing
         pausedByVoice = false // the person decided; voice chat doesn't resume it
         engine.togglePause()
@@ -601,9 +601,9 @@ class Controller(
         changeVolume((volume + delta).coerceIn(0f, 1f))
         showToast("Volume ${(volume * 100).toInt()}%")
     }
-    fun seek(ms: Long) { if (remoteControlling) sync.remote.send(RemoteCommand.seek(ms)) else localSeek(ms) }
+    fun seek(ms: Long) { if (remoteControlling) controlRemote(RemoteCommand.seek(ms)) else localSeek(ms) }
     private fun localSeek(ms: Long) { positionMs = ms; engine.seek(ms); sync.remote.localChanged() }
-    fun changeVolume(v: Float) { if (remoteControlling) sync.remote.send(RemoteCommand.volume(v)) else localVolume(v) }
+    fun changeVolume(v: Float) { if (remoteControlling) controlRemote(RemoteCommand.volume(v)) else localVolume(v) }
     private fun localVolume(v: Float) { volume = v; engine.setVolume((v * duckFactor).toDouble()); sync.remote.localChanged() }
 
     // ---------------- Discord mode: quieter (or paused) while someone talks ----------------
@@ -662,7 +662,10 @@ class Controller(
             // Like Spotify: what you pick plays on the device that is playing.
             val shuffled = shuffleMode(context) != ShuffleMode.OFF && index in list.indices
             val ordered = if (shuffled) listOf(list[index]) + list.filterIndexed { i, _ -> i != index }.shuffled() else list
-            sync.remote.send(RemoteCommand.queue(ordered, if (shuffled) 0 else index, context))
+            controlRemote(RemoteCommand.queue(ordered, if (shuffled) 0 else index, context))
+            val name = playingOn
+            // Say where it plays, with a way to play it here instead.
+            showToast("Playing on $name", ToastAction("Play here") { lastRemoteActionAt = 0; playHere() })
             return
         }
         claimActive()
@@ -691,28 +694,28 @@ class Controller(
         if (shuffleMode(ctx) == ShuffleMode.OFF) shuffleModes[ctx] = ShuffleMode.ON
         playCollection(list, ctx)
     }
-    fun jumpTo(index: Int) { if (remoteControlling) sync.remote.send(RemoteCommand.jump(index)) else { queue = queue.jump(index); startCurrent() } }
+    fun jumpTo(index: Int) { if (remoteControlling) controlRemote(RemoteCommand.jump(index)) else { queue = queue.jump(index); startCurrent() } }
 
     fun addToQueue(song: SongItem) {
-        if (remoteControlling) { sync.remote.send(RemoteCommand.song("add", song)); showToast("Added to the queue on $playingOn"); return }
+        if (remoteControlling) { controlRemote(RemoteCommand.song("add", song)); showToast("Added to the queue on $playingOn"); return }
         val was = queue.items.isEmpty(); queue = queue.add(song)
         if (was) { queue = queue.jump(0); startCurrent() } else showToast("Added to queue")
     }
 
     fun playNext(song: SongItem) {
-        if (remoteControlling) { sync.remote.send(RemoteCommand.song("playnext", song)); showToast("Playing next on $playingOn"); return }
+        if (remoteControlling) { controlRemote(RemoteCommand.song("playnext", song)); showToast("Playing next on $playingOn"); return }
         queue = queue.playNext(song)
         if (queue.items.size == 1) { queue = queue.jump(0); startCurrent() } else { queue.upNext?.let { engine.prefetch(it.id) }; showToast("Playing next") }
     }
 
     fun removeFromQueue(position: Int) {
-        if (remoteControlling) { sync.remote.send(kotlinx.serialization.json.buildJsonObject { put("t", "remove"); put("index", position) }); return }
+        if (remoteControlling) { controlRemote(kotlinx.serialization.json.buildJsonObject { put("t", "remove"); put("index", position) }); return }
         queue = queue.remove(position); sync.remote.localChanged()
     }
 
     /** Drag to reorder: moves the song at [from] to [to] in the queue. */
     fun moveInQueue(from: Int, to: Int) {
-        if (remoteControlling) { sync.remote.send(kotlinx.serialization.json.buildJsonObject { put("t", "move"); put("from", from); put("to", to) }); return }
+        if (remoteControlling) { controlRemote(kotlinx.serialization.json.buildJsonObject { put("t", "move"); put("from", from); put("to", to) }); return }
         queue = queue.move(from, to)
         queue.upNext?.let { engine.prefetch(it.id) }
         sync.remote.localChanged()
@@ -866,7 +869,7 @@ class Controller(
         }
     }
 
-    fun cycleRepeat() { if (remoteControlling) sync.remote.send(RemoteCommand.simple("repeat")) else localCycleRepeat() }
+    fun cycleRepeat() { if (remoteControlling) controlRemote(RemoteCommand.simple("repeat")) else localCycleRepeat() }
     private fun localCycleRepeat() { queue = queue.copy(repeat = RepeatMode.entries[(queue.repeat.ordinal + 1) % RepeatMode.entries.size]); sync.remote.localChanged() }
 
     // ---------------- remote control and handoff (like Spotify Connect) ----------------
@@ -884,15 +887,26 @@ class Controller(
         else -> System.currentTimeMillis() - lastPlayedAt
     }
 
+    /** When this device last sent the other one a control (play, pause, next, a song, ...), or chose it in Devices. */
+    @Volatile private var lastRemoteActionAt = 0L
+
+    /** Sends a control to the other device; while used like that, it stays the one these buttons control. */
+    private fun controlRemote(command: kotlinx.serialization.json.JsonObject) {
+        lastRemoteActionAt = System.currentTimeMillis()
+        sync.remote.send(command)
+    }
+
     /**
-     * True while the other device is the active one (playing, or played more recently than this one in the last
-     * 10 minutes): the player shows it, and the buttons and song picks control it.
+     * True while the other device is the active one: it is playing, or this device was used as its remote in the
+     * last 10 minutes (so a pause from here can be undone from here). Then the player shows it, and the buttons and
+     * song picks control it. A paused computer does not take over the phone's taps by itself.
      */
     val remoteControlling: Boolean
         get() {
             val o = remoteDevice ?: return false
             if (o.current == null || playback.playing) return false
-            return o.playing || o.idleNow() < minOf(localIdleMs(), 10 * 60_000L)
+            if (o.playing || o.loading) return true
+            return System.currentTimeMillis() - lastRemoteActionAt < 10 * 60_000L && o.idleNow() < 10 * 60_000L
         }
 
     /** "Redmi Note 8" while controlling it ("Playing on …"). */
@@ -920,7 +934,7 @@ class Controller(
         if (OfflineFiles.isLocal(current.id)) { showToast("This song's file is only on this device, so it can't play on ${o.name}"); return }
         // Files that are only on this device can't play there; the rest of the queue goes.
         val items = queue.items.filter { !OfflineFiles.isLocal(it.id) }
-        sync.remote.send(RemoteCommand.queue(items, items.indexOfFirst { it.id == current.id }, queueContext, positionMs, playing = true, repeat = queue.repeat.name))
+        controlRemote(RemoteCommand.queue(items, items.indexOfFirst { it.id == current.id }, queueContext, positionMs, playing = true, repeat = queue.repeat.name))
         if (playback.playing) engine.togglePause()
         showToast("Playing on ${o.name}")
     }
@@ -929,6 +943,7 @@ class Controller(
     fun playHere() {
         val o = remoteDevice ?: return
         if (o.current == null) return
+        lastRemoteActionAt = 0 // this device plays now; its buttons are its own again
         startQueue(o.items, o.index, o.context.ifEmpty { "remote" }, o.positionNow(), playing = true, repeat = o.repeat)
         sync.remote.send(RemoteCommand.simple("pause"))
     }
